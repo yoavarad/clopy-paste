@@ -2,6 +2,7 @@
 package httpapi
 
 import (
+	"fmt"
 	"log/slog"
 	"net/http"
 	"sync/atomic"
@@ -38,7 +39,7 @@ func (s *Server) SetReady(ready bool) {
 	s.ready.Store(ready)
 }
 
-// Handler returns the root handler: routes, JSON 404/405 bodies, panic recovery.
+// Handler returns the root handler: routes, JSON 404/405 bodies, panic recovery, request logging.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /api/messages", s.handleGetMessages)  // ydk:route:api/get-messages
@@ -46,7 +47,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", s.handleIndex)                 // ydk:route:api/index
 	mux.HandleFunc("GET /readyz", s.handleReadyz)             // ydk:route:api/readyz
 	mux.HandleFunc("POST /api/messages", s.handleSendMessage) // ydk:route:api/send-message
-	return s.recoverPanics(jsonFallback(mux))
+	return s.logRequests(s.recoverPanics(jsonFallback(mux)))
 }
 
 // recoverPanics turns a handler panic into a JSON 500 (TODO handlers panic until implemented).
@@ -57,7 +58,7 @@ func (s *Server) recoverPanics(next http.Handler) http.Handler {
 				if rec == http.ErrAbortHandler {
 					panic(rec)
 				}
-				s.deps.Logger.Error("panic recovered", "method", r.Method, "path", r.URL.Path, "panic", rec)
+				s.deps.Logger.Error("internal error", "route", routeOf(r), "method", r.Method, "error", fmt.Sprint(rec))
 				writeError(w, http.StatusInternalServerError, msgInternalError)
 			}
 		}()
