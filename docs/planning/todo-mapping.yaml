@@ -1,0 +1,19 @@
+# TODO-to-task mapping for: ydk todo assign-batch docs/planning/todo-mapping.yaml
+# Keys are batch placeholder IDs from docs/planning/batch.yaml; ydk resolves them through
+# .ydk/batch-mapping.json written by `ydk task create-batch` (run that first, without --dry-run).
+# Primary method per Stage 02 is `ydk todo auto-assign --apply`; this file covers what it misses.
+assignments:
+  T-censor:
+    - YDK-TODO-001
+  T-store:
+    - YDK-TODO-003
+    - YDK-TODO-004
+  T-get-handler:
+    - YDK-TODO-005
+  T-send-handler:
+    - YDK-TODO-006
+  T-kafka-publisher:
+    - YDK-TODO-002
+    - YDK-TODO-007
+  T-kafka-consumer:
+    - YDK-TODO-008
