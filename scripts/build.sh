@@ -11,6 +11,21 @@ echo "build: bin/$APP ($VERSION)"
 if [ -f Dockerfile ]; then
   if command -v docker >/dev/null 2>&1; then
     docker build -t "$IMAGE" .
+    # ydk:nfr:system/image-size: compressed image <= 60 MB (62914560 bytes)
+    MAX_IMAGE_BYTES=62914560
+    tmp="$(mktemp)"
+    trap 'rm -f "$tmp" "$tmp.gz"' EXIT
+    docker save "$IMAGE" -o "$tmp"
+    gzip -c "$tmp" > "$tmp.gz"
+    size="$(wc -c < "$tmp.gz" | tr -d ' ')"
+    case "$size" in
+      ''|*[!0-9]*) echo "build: FAIL cannot measure image size" >&2; exit 1 ;;
+    esac
+    echo "build: image $IMAGE compressed size $size bytes (max $MAX_IMAGE_BYTES)"
+    if [ "$size" -gt "$MAX_IMAGE_BYTES" ]; then
+      echo "build: FAIL image $IMAGE exceeds $MAX_IMAGE_BYTES bytes" >&2
+      exit 1
+    fi
   else
     echo "build: docker not found, skipping image $IMAGE"
   fi

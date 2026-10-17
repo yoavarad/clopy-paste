@@ -11,7 +11,10 @@ helm upgrade --install clopy-paste-a "$CHART_DIR" --namespace "$NAMESPACE" --cre
   --set openshift.enabled=false \
   --set-string image.repository="$IMAGE_REPO" \
   --set-string image.tag="$VERSION" \
+  --set ingress.enabled=true \
   --set-string ingress.className="nginx" \
+  --set 'networkPolicy.ingressNamespaceSelector.policy-group\.network\.openshift\.io/ingress=null' \
+  --set-string 'networkPolicy.ingressNamespaceSelector.kubernetes\.io/metadata\.name=ingress-nginx' \
   --set-string ingress.host="a.clopy-paste.local" \
   --set-string instanceName="side-a" \
   --set-string kafka.bootstrapServers="${KAFKA_CLUSTER}-kafka-bootstrap.${NAMESPACE}.svc:9093" \
@@ -25,7 +28,10 @@ helm upgrade --install clopy-paste-b "$CHART_DIR" --namespace "$NAMESPACE" --cre
   --set openshift.enabled=false \
   --set-string image.repository="$IMAGE_REPO" \
   --set-string image.tag="$VERSION" \
+  --set ingress.enabled=true \
   --set-string ingress.className="nginx" \
+  --set 'networkPolicy.ingressNamespaceSelector.policy-group\.network\.openshift\.io/ingress=null' \
+  --set-string 'networkPolicy.ingressNamespaceSelector.kubernetes\.io/metadata\.name=ingress-nginx' \
   --set-string ingress.host="b.clopy-paste.local" \
   --set-string instanceName="side-b" \
   --set-string kafka.bootstrapServers="${KAFKA_CLUSTER}-kafka-bootstrap.${NAMESPACE}.svc:9092" \

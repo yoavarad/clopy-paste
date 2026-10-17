@@ -43,7 +43,6 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	_ = cfg // pass cfg to adapters and stubs below as they need it
 
 	kafkaClient, err := kafkaadapter.Connect()
 	if err != nil {
@@ -56,7 +55,7 @@ func run(logger *slog.Logger) error {
 
 	api := httpapi.NewServer(httpapi.Deps{
 		Logger:       logger,
-		Censor:       messaging.NewCensor(),
+		Censor:       messaging.NewCensor(cfg.CensorChars),
 		Publisher:    kafkaadapter.NewPublisher(kafkaClient),
 		Store:        messaging.NewStore(),
 		InstanceName: cfg.InstanceName,
