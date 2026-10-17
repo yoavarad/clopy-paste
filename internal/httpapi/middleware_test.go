@@ -13,6 +13,13 @@ func logServer(buf *bytes.Buffer) *Server {
 	return NewServer(Deps{Logger: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
 }
 
+// panicHandler serves a route that always panics, independent of which real handlers are implemented.
+func panicHandler(s *Server) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("POST /api/messages", func(http.ResponseWriter, *http.Request) { panic("boom") })
+	return s.logRequests(s.recoverPanics(mux))
+}
+
 func TestRequestLogging(t *testing.T) {
 	t.Run("debug line with method, pattern, status, duration_ms", func(t *testing.T) {
 		var buf bytes.Buffer
@@ -45,7 +52,7 @@ func TestRequestLogging(t *testing.T) {
 	})
 	t.Run("panic logged at ERROR internal error with route, method, error", func(t *testing.T) {
 		var buf bytes.Buffer
-		logServer(&buf).Handler().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/messages", nil))
+		panicHandler(logServer(&buf)).ServeHTTP(httptest.NewRecorder(), httptest.NewRequest("POST", "/api/messages", nil))
 		out := buf.String()
 		for _, want := range []string{"level=ERROR", "msg=\"internal error\"", "method=POST", "route=\"POST /api/messages\"", "error=", "status=500"} {
 			if !strings.Contains(out, want) {
