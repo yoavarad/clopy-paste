@@ -44,7 +44,7 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
-	kafkaClient, err := kafkaadapter.Connect()
+	kafkaClient, err := kafkaadapter.Connect(cfg)
 	if err != nil {
 		return err
 	}
@@ -56,7 +56,7 @@ func run(logger *slog.Logger) error {
 	api := httpapi.NewServer(httpapi.Deps{
 		Logger:       logger,
 		Censor:       messaging.NewCensor(cfg.CensorChars),
-		Publisher:    kafkaadapter.NewPublisher(kafkaClient),
+		Publisher:    kafkaadapter.NewPublisher(kafkaClient, logger),
 		Store:        messaging.NewStore(),
 		InstanceName: cfg.InstanceName,
 	})
