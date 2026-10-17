@@ -80,7 +80,8 @@ spec:
             httpGet:
               path: /readyz
               port: http
-            periodSeconds: 5
+            initialDelaySeconds: 0
+            periodSeconds: 2
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
           securityContext:

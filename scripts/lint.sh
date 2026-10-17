@@ -21,6 +21,7 @@ fi
 if [ -d "$CHART_DIR" ]; then
   if command -v helm >/dev/null 2>&1; then
     helm lint --strict "$CHART_DIR"
+    sh scripts/chart-check.sh
   else
     echo "lint: helm not found, skipping chart lint"
   fi
