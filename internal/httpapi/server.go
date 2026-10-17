@@ -15,6 +15,9 @@ type Deps struct {
 	Censor    messaging.Censor
 	Publisher messaging.Publisher
 	Store     messaging.Store
+
+	// InstanceName is the label shown in the page header (INSTANCE_NAME).
+	InstanceName string
 }
 
 // Server holds handler dependencies and readiness state.

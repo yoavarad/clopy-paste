@@ -4,20 +4,164 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>clopy-paste</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { font: 14px/1.4 system-ui, sans-serif; color: #222; background: #fff; }
+  main { display: flex; height: 100%; }
+  section { flex: 1 1 50%; padding: 12px; display: flex; flex-direction: column; min-width: 0; }
+  #send { border-right: 1px solid #ccc; }
+  .head { display: flex; justify-content: space-between; font-weight: bold; margin-bottom: 8px; }
+  label { display: block; margin-bottom: 8px; }
+  input[type=text] { width: 70%; padding: 4px; }
+  textarea { width: 100%; height: 50vh; padding: 6px; font: inherit; resize: vertical; }
+  .row { display: flex; justify-content: space-between; align-items: center; margin: 6px 0; }
+  #status { color: #555; }
+  h2 { font-size: 1em; margin: 0 0 8px; }
+  #list { overflow-y: auto; flex: 1; }
+  .item { margin-bottom: 10px; }
+  .item .meta { display: flex; justify-content: space-between; color: #555; }
+  .item pre { margin: 2px 0 0; padding: 6px; border: 1px solid #ccc; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; }
+  @media (max-width: 699px) {
+    main { flex-direction: column; height: auto; }
+    #send { border-right: 0; border-bottom: 1px solid #ccc; }
+  }
+</style>
 </head>
 <body>
 <!-- ydk:page:ui/main: The only page. Left half: send a message under a username. Right half: messages received -->
-<!-- Layout: Two columns, 50/50 width, full viewport height; stacks vertically below 700 px viewport width -->
 <main>
-<section id="header">
-  <!-- YDK-TODO: Title &#x27;clopy-paste&#x27; and instance label &#x27;[&lt;INSTANCE_NAME&gt;]&#x27; inserted server-side -->
-</section>
 <section id="send">
-  <!-- YDK-TODO: Username input, textarea, counter, Send button, status line (data: ydk:route:api/send-message) -->
+  <div class="head"><span>clopy-paste</span><span>[{{INSTANCE_NAME}}]</span></div>
+  <label>User: <input type="text" id="user" maxlength="128" autocomplete="off"></label>
+  <textarea id="text" maxlength="1000" placeholder="free text..."></textarea>
+  <div class="row"><span id="counter">0/1000</span><button id="btn" type="button">Send</button></div>
+  <div id="status">status:</div>
 </section>
 <section id="received">
-  <!-- YDK-TODO: Heading &#x27;Received from other side&#x27; and the list of received messages with copy buttons (data: ydk:route:api/get-messages) -->
+  <h2>Received from other side</h2>
+  <div id="list"></div>
 </section>
 </main>
+<script>
+(function () {
+  'use strict';
+  var userEl = document.getElementById('user');
+  var textEl = document.getElementById('text');
+  var counterEl = document.getElementById('counter');
+  var btn = document.getElementById('btn');
+  var statusEl = document.getElementById('status');
+  var listEl = document.getElementById('list');
+  var KEY = 'clopy-paste.user';
+
+  try { userEl.value = localStorage.getItem(KEY) || ''; } catch (e) { /* storage unavailable */ }
+
+  function setStatus(s) { statusEl.textContent = 'status: ' + s; }
+  function updateCounter() { counterEl.textContent = textEl.value.length + '/1000'; }
+  textEl.addEventListener('input', updateCounter);
+  updateCounter();
+
+  btn.addEventListener('click', function () {
+    var sent = textEl.value;
+    btn.disabled = true;
+    setStatus('sending...');
+    fetch('/api/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user: userEl.value, text: sent })
+    }).then(function (res) {
+      if (res.ok) {
+        if (textEl.value === sent) { textEl.value = ''; }
+        updateCounter();
+        setStatus('sent');
+        return;
+      }
+      if (res.status === 503) { setStatus('Kafka: disconnected'); return; }
+      return res.json().then(function (b) {
+        setStatus('error: ' + (b && b.error ? b.error : 'HTTP ' + res.status));
+      }, function () { setStatus('error: HTTP ' + res.status); });
+    }).catch(function (e) {
+      setStatus('error: ' + e.message);
+    }).then(function () { btn.disabled = false; });
+  });
+
+  function pad(n) { return (n < 10 ? '0' : '') + n; }
+  function hms(iso) {
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) { return ''; }
+    return pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+  }
+
+  function copyText(text) {
+    if (window.isSecureContext && navigator.clipboard) {
+      return navigator.clipboard.writeText(text);
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    document.body.appendChild(ta);
+    ta.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } finally { document.body.removeChild(ta); }
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  }
+
+  function render(items) {
+    var frag = document.createDocumentFragment();
+    items.forEach(function (m) {
+      var item = document.createElement('div');
+      item.className = 'item';
+      var meta = document.createElement('div');
+      meta.className = 'meta';
+      var t = document.createElement('span');
+      t.textContent = hms(m.time);
+      var b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'copy';
+      var timer = 0;
+      b.addEventListener('click', function () {
+        clearTimeout(timer);
+        copyText(m.text).then(function () {
+          b.textContent = 'copied';
+        }, function () { b.textContent = 'failed'; }).then(function () {
+          timer = setTimeout(function () { b.textContent = 'copy'; }, 1500);
+        });
+      });
+      meta.appendChild(t);
+      meta.appendChild(b);
+      var pre = document.createElement('pre');
+      pre.textContent = m.text;
+      item.appendChild(meta);
+      item.appendChild(pre);
+      frag.appendChild(item);
+    });
+    listEl.replaceChildren(frag);
+  }
+
+  var seq = 0;
+  function poll() {
+    var user = userEl.value;
+    if (user === '') { return; }
+    var my = seq;
+    fetch('/api/messages?user=' + encodeURIComponent(user)).then(function (res) {
+      if (!res.ok) { throw new Error('HTTP ' + res.status); }
+      return res.json();
+    }).then(function (items) {
+      if (my === seq && user === userEl.value && Array.isArray(items)) { render(items); }
+    }).catch(function () { /* keep the last list */ });
+  }
+
+  userEl.addEventListener('input', function () {
+    try { localStorage.setItem(KEY, userEl.value); } catch (e) { /* ignore */ }
+    seq++;
+    listEl.replaceChildren();
+    if (userEl.value !== '') { poll(); }
+  });
+  setInterval(poll, 2000);
+  poll();
+})();
+</script>
 </body>
 </html>
