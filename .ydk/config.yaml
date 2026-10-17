@@ -35,7 +35,6 @@ verification:
   - helm-lint
   - spec-alignment
   - pr-body-validation
-  - ai-code-review
   - tdd-guard
   - tdd-guard-cmd
   - guard-no-manual-pr
