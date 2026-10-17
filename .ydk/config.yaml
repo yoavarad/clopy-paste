@@ -1,0 +1,91 @@
+project:
+  name: clopy-paste
+  spec_location: docs/specs
+  adrs_location: docs/adrs
+  research_location: docs/research
+  remote: github
+  stack: go
+hooks:
+  pre_push:
+    spec_check: false
+    task_check: false
+spec_check:
+  timeout: 60
+  global_timeout: 120
+  concurrency: 10
+  results_path: .ydk/spec-check-results.json
+  thresholds:
+    completeness: 8
+    clarity: 8
+    architecture: 8
+  custom: []
+task_management:
+  dag_validation: true
+  coverage_check: true
+execution:
+  max_parallel_agents: 5
+  task_timeout_minutes: 30
+  worktree_isolation: true
+verification:
+  enabled:
+  - go-fmt
+  - go-vet
+  - go-test
+  - go-vendor
+  - helm-lint
+  - spec-alignment
+  - pr-body-validation
+  - tdd-guard
+  - tdd-guard-cmd
+  - guard-no-manual-pr
+  - guard-no-noqa
+  - guard-no-proof-tamper
+  - guard-stage-gate
+  - guard-stage-gate-cmd
+  go:
+    coverage_min: 0
+    coverage_packages:
+    - internal/messaging
+    - internal/messaging/*
+    - internal/httpapi
+    - internal/httpapi/*
+    - internal/config
+    - internal/config/*
+    race: true
+  helm:
+    charts:
+    - charts/clopy-paste
+    require_schema: true
+  tdd:
+    source_globs:
+    - '**/*.go'
+    test_globs:
+    - '**/*_test.go'
+    exempt_globs:
+    - vendor/**
+    - test/**
+    test_for: same-dir-suffix
+    test_suffix: _test.go
+tdd:
+  test_commands:
+  - \bgo test\b
+  - \bmake test\b
+guards:
+  code_dirs:
+  - cmd
+  - internal
+  - pkg
+  - charts
+  - scripts
+  - test
+  - tests
+testing:
+  test_globs:
+  - '**/*_test.go'
+ci:
+  make_targets:
+  - lint
+  - test
+  - build
+  gitlab:
+    image: golang:1.27

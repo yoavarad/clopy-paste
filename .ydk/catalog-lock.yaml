@@ -1,0 +1,19 @@
+installed:
+- name: ydk-core-schemas
+  version: 0.1.0
+  tags:
+  - component-schemas
+  - built-in
+- name: go-http-service
+  version: 0.1.0
+  tags:
+  - ignition-pack
+  - go
+  - net-http
+  - stdlib
+- name: go-quality
+  version: 0.1.0
+  tags:
+  - verification
+  - go
+  - quality

@@ -64,6 +64,6 @@ Kafka is the only link between the sides.
   (store, censor, validation, config, router).
 - No Kafka mocks in integration tests: run against real Strimzi in kind.
 - e2e talks to the system only over HTTP through each release's Ingress.
-- `go test -race` always; coverage >= 80% on core packages (censor, store, message, httpapi,
-  config).
+- `go test -race` always; coverage >= 80% on core packages (internal/messaging, internal/httpapi,
+  internal/config).
 - Every requirement acceptance criterion maps to at least one test case.

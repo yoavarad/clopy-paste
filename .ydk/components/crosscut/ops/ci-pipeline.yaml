@@ -6,7 +6,7 @@ specification: |
   call make. No marketplace actions or remote templates in core steps.
   Stages / make targets:
   1. lint: gofmt -l (must be empty), go vet, go mod vendor diff check, helm lint, values.schema.json validation.
-  2. test: go test -race -cover ./...; coverage >= 80% on internal/censor, internal/store, internal/message, internal/httpapi, internal/config.
+  2. test: go test -race -cover ./...; coverage >= 80% on internal/messaging, internal/httpapi, internal/config.
   3. build: multi-stage image (golang:1.27 -> ubi9/ubi-micro), CGO_ENABLED=0, -mod=vendor, -trimpath; image size gate (ydk:nfr:system/image-size).
   4. scan: trivy image + chart config, fail on HIGH/CRITICAL; runs when SCAN_ENABLED=true (GitHub true, GitLab false until DB mirror).
   5. e2e: env-up, install both releases, run e2e script, env-down.

@@ -1,0 +1,112 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "clopy-paste.fullname" . }}
+  labels:
+    {{- include "clopy-paste.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "clopy-paste.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "clopy-paste.selectorLabels" . | nindent 8 }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: clopy-paste
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          env:
+            - name: INSTANCE_NAME
+              value: {{ .Values.instanceName | quote }}
+            - name: KAFKA_BOOTSTRAP_SERVERS
+              value: {{ .Values.kafka.bootstrapServers | quote }}
+            - name: KAFKA_INPUT_TOPIC
+              value: {{ .Values.kafka.inputTopic | quote }}
+            - name: KAFKA_OUTPUT_TOPIC
+              value: {{ .Values.kafka.outputTopic | quote }}
+            {{- if not (kindIs "invalid" .Values.kafka.consumerGroup) }}
+            - name: KAFKA_CONSUMER_GROUP
+              value: {{ .Values.kafka.consumerGroup | quote }}
+            {{- end }}
+            - name: KAFKA_SECURITY_PROTOCOL
+              value: {{ .Values.kafka.securityProtocol | quote }}
+            {{- if .Values.kafka.sasl.existingSecret }}
+            - name: KAFKA_SASL_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kafka.sasl.existingSecret }}
+                  key: {{ .Values.kafka.sasl.usernameKey }}
+            {{- end }}
+            {{- if .Values.kafka.sasl.existingSecret }}
+            - name: KAFKA_SASL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.kafka.sasl.existingSecret }}
+                  key: {{ .Values.kafka.sasl.passwordKey }}
+            {{- end }}
+            {{- if or .Values.kafka.ca.existingSecret .Values.kafka.ca.configMap }}
+            - name: KAFKA_CA_FILE
+              value: "/etc/clopy-paste/ca/{{ .Values.kafka.ca.key }}"
+            {{- end }}
+            {{- if not (kindIs "invalid" .Values.censor.chars) }}
+            - name: CENSOR_CHARS
+              value: {{ .Values.censor.chars | quote }}
+            {{- end }}
+            - name: LOG_LEVEL
+              value: {{ .Values.logLevel | quote }}
+            - name: GOMEMLIMIT
+              value: "100MiB"
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            periodSeconds: 10
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            periodSeconds: 5
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
+          {{- if or .Values.kafka.ca.existingSecret .Values.kafka.ca.configMap }}
+          volumeMounts:
+            {{- if or .Values.kafka.ca.existingSecret .Values.kafka.ca.configMap }}
+            - name: kafka-ca
+              mountPath: /etc/clopy-paste/ca
+              readOnly: true
+            {{- end }}
+          {{- end }}
+      {{- if or .Values.kafka.ca.existingSecret .Values.kafka.ca.configMap }}
+      volumes:
+        {{- if .Values.kafka.ca.existingSecret }}
+        - name: kafka-ca
+          secret:
+            secretName: {{ .Values.kafka.ca.existingSecret }}
+        {{- else if .Values.kafka.ca.configMap }}
+        - name: kafka-ca
+          configMap:
+            name: {{ .Values.kafka.ca.configMap }}
+        {{- end }}
+      {{- end }}

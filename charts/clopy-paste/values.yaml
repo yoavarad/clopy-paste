@@ -1,0 +1,41 @@
+# Default values for clopy-paste. values.schema.json rejects unknown keys.
+image:
+  repository: clopy-paste
+  tag: ''
+  pullPolicy: IfNotPresent
+openshift:
+  enabled: false
+route:
+  host: ''
+ingress:
+  enabled: false
+  className: ''
+  host: ''
+networkPolicy:
+  enabled: true
+  ingressNamespaceSelector: {}
+resources:
+  requests:
+    cpu: 50m
+    memory: 64Mi
+  limits:
+    cpu: 500m
+    memory: 128Mi
+instanceName: ''
+kafka:
+  bootstrapServers: ''
+  inputTopic: ''
+  outputTopic: ''
+  consumerGroup: null
+  securityProtocol: SASL_SSL
+  sasl:
+    existingSecret: ''
+    usernameKey: username
+    passwordKey: password
+  ca:
+    existingSecret: ''
+    configMap: ''
+    key: ca.crt
+censor:
+  chars: null
+logLevel: INFO

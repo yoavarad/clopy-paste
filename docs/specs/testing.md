@@ -13,8 +13,8 @@ Tools: Go `testing` and `httptest` for unit and integration, POSIX shell and cur
 3. e2e tests touch the system only through HTTP via the Ingress of each release, as a user's
    browser would.
 4. All Go tests run with the race detector.
-5. Coverage gate: >= 80% statement coverage on internal/censor, internal/store,
-   internal/message, internal/httpapi and internal/config. The Kafka adapter is covered by
+5. Coverage gate: >= 80% statement coverage on internal/messaging, internal/httpapi and
+   internal/config. The Kafka adapter is covered by
    integration tests and excluded from the gate.
 6. Each requirement's acceptance criteria map to at least one test case.
 
