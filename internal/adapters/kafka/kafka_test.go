@@ -93,9 +93,8 @@ func TestConnectCommonOptions(t *testing.T) {
 	if got := cl.OptValue(kgo.ConsumerGroup); got != "clopy-paste-a" {
 		t.Errorf("group = %v", got)
 	}
-	topics := cl.OptValue(kgo.ConsumeTopics).(map[string]*regexp.Regexp)
-	if _, ok := topics["in-topic"]; !ok || len(topics) != 1 {
-		t.Errorf("consume topics = %v", topics)
+	if topics := cl.OptValue(kgo.ConsumeTopics).(map[string]*regexp.Regexp); len(topics) != 0 {
+		t.Errorf("consume topics = %v, want none (Consumer.Run subscribes)", topics)
 	}
 	if got := cl.OptValue(kgo.ConsumeResetOffset); got != kgo.NewOffset().AtEnd() {
 		t.Errorf("reset offset = %v, want end", got)
