@@ -1,0 +1,38 @@
+stack:
+  language: go
+
+# Go runtime deps are per ext technology (templates/adapters/<tech>.deps), added only when used.
+
+generators:
+  - id: go-module
+    script: generators/go_module.py
+    inputs: [config]
+  - id: config-loader
+    script: generators/config_loader.py
+    inputs: [crosscut, config]
+  - id: domain-packages
+    script: generators/domain_packages.py
+    inputs: [entity, contract, error, ext]
+  - id: http-api
+    script: generators/http_api.py
+    inputs: [route, error, crosscut, contract, page, config]
+  - id: ext-adapters
+    script: generators/ext_adapters.py
+    inputs: [ext, contract, entity, config]
+  - id: web-pages
+    script: generators/web_pages.py
+    inputs: [page, config]
+  - id: main-cmd
+    script: generators/main_cmd.py
+    inputs: [contract, nfr, config]
+  - id: env
+    script: generators/env_pipeline.py
+    inputs: [crosscut, ext, test, config]
+
+
+phases:
+  - id: ops
+    generators:
+      - id: ops-manifests
+        script: generators/ops.py
+        inputs: [crosscut, nfr, req, config]
