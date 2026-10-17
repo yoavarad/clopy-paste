@@ -48,7 +48,7 @@ todos:
     line: 11
     method: <unknown>
     component_refs: []
-    status: open
+    status: done
     task_id: '26'
     description: 'ydk:route:api/get-messages: GET /api/messages'
   YDK-TODO-006:

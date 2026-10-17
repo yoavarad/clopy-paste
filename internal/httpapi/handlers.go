@@ -11,11 +11,6 @@ import (
 // instancePlaceholder is replaced with the html-escaped INSTANCE_NAME in web/main.html.
 const instancePlaceholder = "{{INSTANCE_NAME}}"
 
-// handleGetMessages serves GET /api/messages -- ydk:route:api/get-messages: Returns messages received from the other side for one username, newest first, at most 100.
-func (s *Server) handleGetMessages(w http.ResponseWriter, r *http.Request) {
-	panic("not implemented") // ydk:route:api/get-messages: GET /api/messages
-}
-
 // handleHealthz serves GET /healthz -- ydk:route:api/healthz: Liveness endpoint (ydk:crosscut:system/health-checks). Returns 200 whenever the HTTP server
 func (s *Server) handleHealthz(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
