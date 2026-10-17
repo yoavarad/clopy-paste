@@ -12,6 +12,10 @@ if [ -n "$unformatted" ]; then
   exit 1
 fi
 go vet ./...
+if grep -nE 'innerHTML|insertAdjacentHTML' web/*.html; then
+  echo "lint: web/*.html must not use innerHTML or insertAdjacentHTML (plain-text rendering)" >&2
+  exit 1
+fi
 if [ -d vendor ]; then
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT

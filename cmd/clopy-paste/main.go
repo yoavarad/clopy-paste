@@ -54,10 +54,11 @@ func run(logger *slog.Logger) error {
 	defer stop()
 
 	api := httpapi.NewServer(httpapi.Deps{
-		Logger:    logger,
-		Censor:    messaging.NewCensor(cfg.CensorChars),
-		Publisher: kafkaadapter.NewPublisher(kafkaClient),
-		Store:     messaging.NewStore(),
+		Logger:       logger,
+		Censor:       messaging.NewCensor(cfg.CensorChars),
+		Publisher:    kafkaadapter.NewPublisher(kafkaClient),
+		Store:        messaging.NewStore(),
+		InstanceName: cfg.InstanceName,
 	})
 	listenAddr := net.JoinHostPort(os.Getenv("LISTEN_HOST"), listenPort)
 	srv := &http.Server{Addr: listenAddr, Handler: api.Handler(), ReadHeaderTimeout: 5 * time.Second}
