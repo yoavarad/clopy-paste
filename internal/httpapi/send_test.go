@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -145,6 +146,47 @@ func TestSendMessage(t *testing.T) {
 		post(func() http.Handler { h, _ := sendServer(nil, lg); return h }(), `{"user":"u","text":""}`)
 		if strings.Contains(buf.String(), "SECRET-MARKER-123") {
 			t.Fatalf("text leaked: %s", buf.String())
+		}
+	})
+}
+
+func storeServer(store messaging.Store) http.Handler {
+	pub := &messaging.FakePublisher{}
+	return NewServer(Deps{Logger: slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil)), Censor: messaging.NewCensor("$!~"), Publisher: pub, Store: store}).Handler()
+}
+
+func TestSendNotStored(t *testing.T) {
+	msg := messaging.Message{Text: "m"}
+	t.Run("does not create user", func(t *testing.T) {
+		var logs bytes.Buffer
+		store := messaging.NewStoreWithLogger(slog.New(slog.NewTextHandler(&logs, nil)))
+		h := storeServer(store)
+		if rec := post(h, `{"user":"X","text":"hi"}`); rec.Code != 202 {
+			t.Fatalf("status %d", rec.Code)
+		}
+		if got := store.Get("X"); len(got) != 0 {
+			t.Fatalf("X stored: %v", got)
+		}
+		// Capacity is 100 users: if send had created X, the 100th add below would evict it and log.
+		for i := 0; i < 100; i++ {
+			store.Add("u"+strconv.Itoa(i), msg)
+		}
+		if strings.Contains(logs.String(), "user evicted") {
+			t.Fatalf("send created a user: %s", logs.String())
+		}
+	})
+	t.Run("does not touch user", func(t *testing.T) {
+		store := messaging.NewStore()
+		store.Add("X", msg)
+		for i := 0; i < 99; i++ {
+			store.Add("u"+strconv.Itoa(i), msg)
+		}
+		if rec := post(storeServer(store), `{"user":"X","text":"hi"}`); rec.Code != 202 {
+			t.Fatalf("status %d", rec.Code)
+		}
+		store.Add("new", msg)
+		if got := store.Get("X"); len(got) != 0 {
+			t.Fatal("X survived eviction: send touched it")
 		}
 	})
 }
