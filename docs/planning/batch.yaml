@@ -1,0 +1,774 @@
+# Stage 02 plan for clopy-paste (ydk task create-batch format).
+# Validate: PYTHONUTF8=1 ydk task create-batch --from docs/planning/batch.yaml --dry-run
+# Business logic only: the go-http-service ignition (ADR-018) already generated the skeleton
+# (routes, JSON 404/405, panic recovery, health handlers, config loader, Helm chart, Makefile,
+# scripts, CI). Host toolchain note: go and helm exist locally; make, kind, docker, kubectl and
+# gcc do not, so -race and everything cluster/image related is CI-only verification.
+# TODO mapping: docs/planning/todo-mapping.yaml (ydk todo assign-batch, after create-batch).
+
+epics:
+  - id: E-core
+    title: "Messaging core: message rules, censor, store"
+    description: >-
+      Domain logic in internal/messaging: code-point limits shared by send and receive, the
+      denylist censor and the in-memory FIFO+LRU store (ADR-004, ADR-005, ADR-006, ADR-007,
+      ADR-013).
+    spec_refs: [messaging.md, overview.md]
+  - id: E-api
+    title: "HTTP API and page"
+    description: >-
+      Send and read handlers, the HTTP surface around them, and the single embedded page
+      (ADR-003, ADR-014, ADR-016).
+    spec_refs: [api-and-ui.md]
+  - id: E-kafka
+    title: "Kafka integration"
+    description: >-
+      franz-go client in both security modes, the Publisher adapter, the consumer loop and
+      its integration tests against Strimzi (ADR-007, ADR-008, ADR-017).
+    spec_refs: [messaging.md, operations.md]
+  - id: E-ops
+    title: "Runtime, packaging and delivery"
+    description: >-
+      Validated configuration, wiring and ordered shutdown, chart conformance and the CI
+      gates the skeleton does not have yet (ADR-009 to ADR-012, ADR-015, ADR-017).
+    spec_refs: [operations.md, testing.md]
+  - id: E-verify
+    title: "End-to-end verification"
+    description: >-
+      Round trip between two releases on kind + Strimzi, smoke round trip and the NFRs
+      measured at e2e level.
+    spec_refs: [testing.md, operations.md]
+
+stories:
+  - id: S-config
+    title: "Instance starts only with a valid configuration"
+    epic: E-ops
+    spec_refs: [operations.md]
+    description: "Decisions: ADR-008-kafka-security.md, ADR-017-consumer-group-and-offsets.md (docs/adrs/)."
+    component_refs:
+      - ydk:crosscut:ops/environment
+      - ydk:error:ops/invalid-config
+      - ydk:test:ops/config.unit
+    acceptance:
+      - "Required vars only with PLAINTEXT loads; CENSOR_CHARS defaults to '$!~', LOG_LEVEL to INFO, consumer group to clopy-paste-<INSTANCE_NAME>"
+      - "Each missing required var, a protocol other than PLAINTEXT/SASL_SSL, SASL_SSL without credentials, a bad INSTANCE_NAME or LOG_LEVEL fails with an error naming the variable and never its value"
+      - "CENSOR_CHARS set but empty disables censoring"
+  - id: S-message-rules
+    title: "Messages obey limits and the denylist"
+    epic: E-core
+    spec_refs: [messaging.md]
+    description: "Decisions: ADR-005-censor-denylist.md, ADR-006-limit-violations.md, ADR-007-kafka-record-contract.md (docs/adrs/)."
+    component_refs:
+      - ydk:entity:messaging/Message
+      - ydk:entity:messaging/KafkaRecord
+      - ydk:event:messaging/message-record
+      - ydk:req:messaging/user-length
+      - ydk:req:messaging/text-length
+      - ydk:contract:messaging/Censor
+      - ydk:req:messaging/censor-denylist
+      - ydk:test:messaging/censor.unit
+    acceptance:
+      - "Username 1..128 and text 1..1000 Unicode code points pass; 0 or over the limit fail with the field name and max; nothing is truncated"
+      - "Every denylisted code point is replaced by '_' one for one; other code points, including multi-byte ones, are unchanged"
+      - "Record value encodes and decodes as exactly {\"user\",\"text\"}; unknown fields are ignored on decode"
+  - id: S-store
+    title: "Received messages are kept per username with FIFO and LRU"
+    epic: E-core
+    spec_refs: [messaging.md]
+    description: "Decisions: ADR-004-in-memory-store.md, ADR-013-lru-touch-semantics.md (docs/adrs/)."
+    component_refs:
+      - ydk:contract:messaging/Store
+      - ydk:entity:messaging/MessageStore
+      - ydk:entity:messaging/UserMessages
+      - ydk:req:messaging/fifo-per-user
+      - ydk:req:messaging/lru-eviction
+      - ydk:req:messaging/lru-touch
+      - ydk:req:messaging/unknown-user-not-created
+      - ydk:test:messaging/store.unit
+    acceptance:
+      - "The 101st message for a username drops the oldest"
+      - "The 101st username evicts the least-recently-used one with all its messages"
+      - "Add and Get of a known username refresh recency; Get of an unknown username returns [] and creates nothing"
+      - "Reads return a copy, newest first; concurrent use is race-free; a full store keeps HeapAlloc <= 100 MiB"
+  - id: S-send
+    title: "As a developer I can send text to the other side"
+    epic: E-api
+    spec_refs: [api-and-ui.md, messaging.md]
+    component_refs:
+      - ydk:route:api/send-message
+      - ydk:test:api/send-message.unit
+      - ydk:error:api/invalid-json
+      - ydk:error:api/validation-failed
+      - ydk:error:api/kafka-unavailable
+      - ydk:req:messaging/sent-not-stored
+      - ydk:req:system/no-text-in-logs
+    acceptance:
+      - "Valid send -> 202 {} after the broker ack; username and text are censored before publish"
+      - "Malformed JSON or body over 16384 bytes -> 400; limit violations -> 400 with the exact message; nothing published on any 4xx"
+      - "Publish failure or no ack within 5 s -> 503 {\"error\":\"kafka unavailable, message not sent\"}"
+      - "The local store is untouched by a send; no log line contains the text"
+  - id: S-read
+    title: "As a developer I can read what the other side sent for a username"
+    epic: E-api
+    spec_refs: [api-and-ui.md, messaging.md]
+    component_refs:
+      - ydk:route:api/get-messages
+      - ydk:test:api/get-messages.unit
+    acceptance:
+      - "GET /api/messages?user=<u> returns at most 100 messages newest first with RFC3339 UTC timestamps"
+      - "Unknown username -> [] and nothing is created; the queried username is censored before lookup"
+      - "Missing or over-limit user parameter -> 400"
+  - id: S-http-surface
+    title: "HTTP surface behaves uniformly"
+    epic: E-api
+    spec_refs: [api-and-ui.md, operations.md]
+    description: "Decisions: ADR-016-readiness-independent-of-kafka.md (docs/adrs/)."
+    component_refs:
+      - ydk:test:api/health.unit
+      - ydk:route:api/healthz
+      - ydk:route:api/readyz
+      - ydk:crosscut:system/health-checks
+      - ydk:crosscut:system/error-format
+      - ydk:error:api/not-found
+      - ydk:error:api/method-not-allowed
+      - ydk:error:api/internal-error
+      - ydk:error:api/not-ready
+    acceptance:
+      - "Liveness 200 always; readiness 200 until shutdown starts, then 503 'shutting down'; neither depends on Kafka"
+      - "Unknown path 404 and wrong method 405 with JSON bodies; a handler panic -> 500 'internal error'"
+      - "DEBUG request log line per request except health routes"
+  - id: S-page
+    title: "As a developer I use one minimal page to send, read and copy"
+    epic: E-api
+    spec_refs: [api-and-ui.md]
+    description: "Decisions: ADR-003-ui-polling.md (docs/adrs/)."
+    component_refs:
+      - ydk:page:ui/main
+      - ydk:component:ui/send-form
+      - ydk:component:ui/received-list
+      - ydk:route:api/index
+      - ydk:req:ui/keep-text-on-error
+      - ydk:req:ui/plain-text-rendering
+    acceptance:
+      - "Page shows title and [INSTANCE_NAME] inserted server-side; no external resources"
+      - "Send form: username remembered in localStorage, counter, button disabled in flight, status 'sent' / 'Kafka: disconnected' / 'error: ...', text kept on every failure"
+      - "Received list polls every 2 s and on username change, not when empty, keeps the last list on a failed poll, renders text with textContent only"
+      - "Copy uses navigator.clipboard in a secure context and falls back to a hidden textarea + execCommand('copy') otherwise"
+  - id: S-kafka-produce
+    title: "Accepted messages reach the output topic in either security mode"
+    epic: E-kafka
+    spec_refs: [messaging.md, operations.md]
+    description: "Decisions: ADR-008-kafka-security.md (docs/adrs/)."
+    component_refs:
+      - ydk:contract:messaging/Publisher
+      - ydk:ext:kafka/cluster
+    acceptance:
+      - "SASL_SSL with SCRAM-SHA-512 (CA from KAFKA_CA_FILE or system roots) and PLAINTEXT both connect"
+      - "One record per send: key = censored username, value = {user,text}, no headers, acks=all, idempotent; Publish returns after the ack or an error"
+  - id: S-kafka-consume
+    title: "Records from the other side land in the store"
+    epic: E-kafka
+    spec_refs: [messaging.md]
+    description: "Decisions: ADR-017-consumer-group-and-offsets.md (docs/adrs/)."
+    component_refs:
+      - ydk:req:messaging/drop-invalid-incoming
+      - ydk:error:messaging/bad-incoming-record
+      - ydk:test:messaging/kafka-adapter.integration
+    acceptance:
+      - "Valid record -> Message with the record timestamp stored under its username, not re-censored"
+      - "Invalid record dropped, WARN with topic/partition/offset/reason, offset committed, consumption continues"
+      - "Consumer group from config; a new group starts at latest; restart resumes from the committed offset"
+  - id: S-runtime
+    title: "The process wires everything and shuts down in order"
+    epic: E-ops
+    spec_refs: [operations.md, overview.md]
+    description: "Decisions: ADR-012-logging-stdout-json.md (docs/adrs/)."
+    component_refs:
+      - ydk:crosscut:system/graceful-shutdown
+      - ydk:crosscut:system/logging
+      - ydk:crosscut:system/http-conventions
+      - ydk:config:ops/app
+      - ydk:nfr:system/shutdown-time
+    acceptance:
+      - "Invalid config logs one ERROR naming the variable and exits 1 before listening"
+      - "Startup log lists every setting except the password; server timeouts per http-conventions"
+      - "SIGTERM: not ready, drain HTTP, flush producer, commit offsets, leave group, close client, exit 0 within 10 s"
+  - id: S-chart
+    title: "One chart runs unchanged on kind and OpenShift"
+    epic: E-ops
+    spec_refs: [operations.md]
+    description: "Decisions: ADR-009-local-env-kind-strimzi.md, ADR-014-no-app-auth.md (docs/adrs/)."
+    component_refs:
+      - ydk:crosscut:ops/openshift-conventions
+      - ydk:req:ops/secrets-by-reference
+      - ydk:req:ops/network-restricted-exposure
+      - ydk:req:ops/single-replica
+      - ydk:nfr:system/cpu
+    acceptance:
+      - "Rendered chart: replicas 1, Recreate, restricted-v2 security context, resources per NFR, secretKeyRef for SASL vars, no password literal"
+      - "NetworkPolicy admits port 8080 only from the configured router/ingress namespace"
+  - id: S-pipeline
+    title: "The make-driven pipeline enforces every gate"
+    epic: E-ops
+    spec_refs: [operations.md, testing.md]
+    description: "Decisions: ADR-010-ci-make-thin-wrappers.md, ADR-011-pipeline-stages-versioning.md (docs/adrs/)."
+    component_refs:
+      - ydk:crosscut:ops/ci-pipeline
+      - ydk:nfr:system/image-size
+      - ydk:req:system/dependency-policy
+    acceptance:
+      - "GitHub runs lint, test, build, scan, e2e on every push/PR and publish, deploy, smoke on main and tags; GitLab keeps scan off"
+      - "make test enforces >= 80% coverage on internal/messaging, internal/httpapi, internal/config"
+      - "make build fails when the compressed image exceeds 62914560 bytes"
+  - id: S-e2e
+    title: "A message round-trips between two real instances"
+    epic: E-verify
+    spec_refs: [testing.md, operations.md, messaging.md]
+    component_refs:
+      - ydk:test:system/round-trip.e2e
+      - ydk:crosscut:ops/local-environment
+      - ydk:ext:kafka/external-pipeline
+      - ydk:nfr:system/e2e-latency
+      - ydk:nfr:system/availability
+      - ydk:nfr:system/startup-time
+    acceptance:
+      - "All 9 ydk:test:system/round-trip.e2e cases pass on kind + Strimzi with A on SASL_SSL and B on PLAINTEXT"
+      - "make smoke performs one functional round trip after both releases are Ready"
+      - "e2e-latency P95 <= 5 s; restarted pod Ready <= 10 s and shows messages sent while down; no OOMKill"
+
+tasks:
+  # ---------------------------------------------------------------- E-ops / config
+  - id: T-config-validation
+    title: "Validate environment rules in internal/config"
+    story: S-config
+    component_refs:
+      - ydk:crosscut:ops/environment
+      - ydk:error:ops/invalid-config
+      - ydk:test:ops/config.unit
+    spec_refs: [operations.md]
+    description: |
+      Decisions: ADR-008-kafka-security.md, ADR-017-consumer-group-and-offsets.md (docs/adrs/).
+      The generated internal/config/config.go only checks that required vars are non-empty.
+      Add the rules from ydk:crosscut:ops/environment:
+      - INSTANCE_NAME: 1..63 chars of [a-z0-9-].
+      - KAFKA_SECURITY_PROTOCOL: default SASL_SSL; only PLAINTEXT or SASL_SSL (ADR-008).
+      - SASL_SSL requires KAFKA_SASL_USERNAME and KAFKA_SASL_PASSWORD (error names the
+        variable; error text never contains any value, especially the password).
+      - KAFKA_CONSUMER_GROUP default clopy-paste-<INSTANCE_NAME> (ADR-017).
+      - CENSOR_CHARS: unset -> '$!~' (PENDING real list, ADR-005); set-but-empty -> no
+        censoring (keep os.LookupEnv; today the default is wrongly "").
+      - LOG_LEVEL: DEBUG, INFO, WARN, ERROR only, default INFO.
+      - KAFKA_BOOTSTRAP_SERVERS: parse into a []string of host:port (non-empty).
+      Every error wraps ErrInvalidConfig and names the variable. No other package changes.
+      Start from: ydk test generate --from ydk:test:ops/config.unit --lang go --output internal/config/config_test.go
+    acceptance:
+      - "All 5 ydk:test:ops/config.unit cases pass (minimal-plaintext, missing-required, bad-protocol, sasl-needs-creds, empty-censor)"
+      - "Extra table cases for INSTANCE_NAME pattern, LOG_LEVEL values and default consumer group pass"
+      - "No error string contains a configured value"
+      - "Coverage of internal/config >= 80%"
+    test_strategy: "Unit tests with t.Setenv; real config package, nothing mocked. Locally go test ./internal/config/...; -race runs in CI (no gcc on host)."
+    depends_on: []
+
+  # ---------------------------------------------------------------- E-core
+  - id: T-message-rules
+    title: "Message limits and record value codec in internal/messaging"
+    story: S-message-rules
+    component_refs:
+      - ydk:entity:messaging/Message
+      - ydk:entity:messaging/KafkaRecord
+      - ydk:event:messaging/message-record
+      - ydk:req:messaging/user-length
+      - ydk:req:messaging/text-length
+      - ydk:error:api/validation-failed
+    spec_refs: [messaging.md]
+    description: |
+      Decisions: ADR-006-limit-violations.md, ADR-007-kafka-record-contract.md (docs/adrs/).
+      Nothing in the skeleton validates limits or encodes the record. Add to
+      internal/messaging (new file message.go + message_test.go):
+      - Constants MaxUserLen=128, MaxTextLen=1000 (code points).
+      - ValidateUser(s) / ValidateText(s) (or one Validate(user, text)) counting
+        utf8.RuneCountInString; 0 or over the max -> a typed error carrying field and max so
+        httpapi can render msgValidationFailed ("${field} must be 1..${max} characters").
+        Never truncate. Invalid UTF-8 counts as invalid.
+      - EncodeRecordValue(user, text) []byte -> exactly {"user":..,"text":..}.
+      - DecodeRecordValue([]byte) (user, text, error): JSON object with string fields user and
+        text, unknown fields ignored, then the same limits; error gives a short reason usable
+        in the bad-incoming-record WARN (never the value).
+      Shared by the send handler and the consumer so both paths apply identical rules.
+      No ydk:test manifest targets this directly; write table tests (boundaries 0/1/max/max+1,
+      emoji counted as one code point).
+    acceptance:
+      - "Boundary tests at 0, 1, max and max+1 for both fields pass, including a 1000-emoji text"
+      - "Encode/decode round-trips; decode rejects non-object, missing or non-string fields and over-limit values"
+      - "Unknown JSON fields are ignored on decode"
+    test_strategy: "Unit table tests in internal/messaging/message_test.go; counts toward the 80% gate."
+    depends_on: []
+
+  - id: T-censor
+    title: "Implement the denylist Censor"
+    story: S-message-rules
+    component_refs:
+      - ydk:contract:messaging/Censor
+      - ydk:req:messaging/censor-denylist
+      - ydk:test:messaging/censor.unit
+    spec_refs: [messaging.md]
+    description: |
+      Decisions: ADR-005-censor-denylist.md (docs/adrs/).
+      Replace the panic in internal/messaging/stubs.go censorStub.Apply (YDK-TODO-001).
+      NewCensor takes the denylist string (config CENSOR_CHARS); each code point in it is one
+      denied character. Apply replaces every denied code point with '_' one for one, so the
+      code-point length is unchanged; other code points pass through. Empty list = identity.
+      Pure, safe for concurrent use. Prefer moving the implementation to censor.go next to
+      censor_test.go (tdd-guard same-dir-suffix) and deleting the stub from stubs.go.
+      The censor never touches the store (ADR-018 review rule).
+      Start from: ydk test generate --from ydk:test:messaging/censor.unit --lang go --output internal/messaging/censor_test.go
+    acceptance:
+      - "All 5 ydk:test:messaging/censor.unit cases pass (default-list, passthrough, multibyte-denied, empty-list, length-preserved)"
+      - "No panic(\"not implemented\") left for YDK-TODO-001"
+    test_strategy: "Unit tests, real Censor."
+    depends_on: []
+
+  - id: T-store
+    title: "Implement the in-memory Store with FIFO, LRU and touch"
+    story: S-store
+    component_refs:
+      - ydk:contract:messaging/Store
+      - ydk:entity:messaging/MessageStore
+      - ydk:entity:messaging/UserMessages
+      - ydk:req:messaging/fifo-per-user
+      - ydk:req:messaging/lru-eviction
+      - ydk:req:messaging/lru-touch
+      - ydk:req:messaging/unknown-user-not-created
+      - ydk:test:messaging/store.unit
+      - ydk:nfr:system/memory
+    spec_refs: [messaging.md]
+    description: |
+      Decisions: ADR-004-in-memory-store.md, ADR-013-lru-touch-semantics.md (docs/adrs/).
+      Replace storeStub.Add / storeStub.Get in internal/messaging/stubs.go (YDK-TODO-003,
+      YDK-TODO-004). One mutex guards a map[user]*bucket and a container/list recency list.
+      - Add: absent user and 100 users present -> evict the LRU user with all messages (log
+        INFO "user evicted" with user via an injected *slog.Logger); create bucket; append;
+        101st message drops the oldest; user becomes most recently used.
+      - Get: known user -> move to MRU, return a copy newest first; unknown -> empty non-nil
+        slice, nothing created.
+      - All operations O(1) apart from copying <= 100 messages.
+      Sending never calls the store; the store never calls the censor (ADR-018).
+      Replace the generated placeholder fields of MessageStore/UserMessages in types.go with
+      the real unexported structure if needed. Prefer store.go + store_test.go.
+      Start from: ydk test generate --from ydk:test:messaging/store.unit --lang go --output internal/messaging/store_test.go
+    acceptance:
+      - "All 7 ydk:test:messaging/store.unit cases pass (fifo-101, lru-evict, get-touches, unknown-not-created, copy-returned, concurrent, memory-worst-case)"
+      - "memory-worst-case: 100 users x 100 messages x 1000 code points keeps HeapAlloc <= 100 MiB"
+      - "No panic(\"not implemented\") left for YDK-TODO-003/004"
+    test_strategy: "Unit tests with the real store; concurrent case meaningful under -race (CI)."
+    depends_on: []
+
+  # ---------------------------------------------------------------- E-api
+  - id: T-send-handler
+    title: "Implement POST /api/messages"
+    story: S-send
+    component_refs:
+      - ydk:route:api/send-message
+      - ydk:test:api/send-message.unit
+      - ydk:error:api/invalid-json
+      - ydk:error:api/kafka-unavailable
+      - ydk:req:messaging/sent-not-stored
+      - ydk:req:system/no-text-in-logs
+    spec_refs: [api-and-ui.md, messaging.md]
+    description: |
+      Decisions: ADR-006-limit-violations.md (docs/adrs/).
+      Replace the panic in internal/httpapi/handlers.go handleSendMessage (YDK-TODO-006).
+      Order: http.MaxBytesReader 16384 -> decode JSON object with string user/text (unknown
+      fields ignored; malformed or too large -> 400 invalid-json / validation-failed per the
+      route manifest) -> validate with the messaging limits (400 validation-failed with
+      rendered ${field}/${max}) -> censor user and text -> Publisher.Publish with a 5 s
+      context deadline -> 202 {}. Error or deadline -> 503 msgKafkaUnavailable and WARN
+      "publish failed" (user, length, error). Never touch the store; never log the text.
+      Prefer moving the handler into send_message.go + send_message_test.go.
+      Tests use messaging.FakePublisher (the only allowed fake) and the real censor/store.
+      Start from: ydk test generate --from ydk:test:api/send-message.unit --lang go --output internal/httpapi/send_message_test.go
+    acceptance:
+      - "All 8 ydk:test:api/send-message.unit cases pass (accepted, invalid-json, limits, body-too-large, kafka-down, deadline, method, no-text-in-logs)"
+      - "Publisher receives censored values; nothing published on any 4xx; store unchanged after send"
+      - "No panic(\"not implemented\") left for YDK-TODO-006"
+    test_strategy: "httptest against Server.Handler() with FakePublisher, real Censor and Store; log capture via slog handler on a buffer."
+    depends_on:
+      - "T-message-rules:blocks"
+      - "T-censor:blocks"
+      - "T-store:blocks"
+
+  - id: T-get-handler
+    title: "Implement GET /api/messages"
+    story: S-read
+    component_refs:
+      - ydk:route:api/get-messages
+      - ydk:test:api/get-messages.unit
+    spec_refs: [api-and-ui.md, messaging.md]
+    description: |
+      Decisions: ADR-013-lru-touch-semantics.md (docs/adrs/).
+      Replace the panic in internal/httpapi/handlers.go handleGetMessages (YDK-TODO-005).
+      Read query user; missing/empty or over 128 code points -> 400 validation-failed.
+      Censor the username with the same denylist, then Store.Get (touches known users,
+      never creates unknown ones). Respond 200 with the shape in the route manifest: up to 100
+      items newest first, time as RFC3339 UTC seconds precision. Prefer get_messages.go +
+      get_messages_test.go.
+      Start from: ydk test generate --from ydk:test:api/get-messages.unit --lang go --output internal/httpapi/get_messages_test.go
+    acceptance:
+      - "All 4 ydk:test:api/get-messages.unit cases pass (newest-first, unknown, censored-lookup, bad-param)"
+      - "No panic(\"not implemented\") left for YDK-TODO-005"
+    test_strategy: "httptest with real Store and Censor."
+    depends_on:
+      - "T-message-rules:blocks"
+      - "T-censor:blocks"
+      - "T-store:blocks"
+
+  - id: T-http-surface
+    title: "Request logging middleware and health/error-format tests"
+    story: S-http-surface
+    component_refs:
+      - ydk:test:api/health.unit
+      - ydk:route:api/healthz
+      - ydk:route:api/readyz
+      - ydk:crosscut:system/health-checks
+      - ydk:crosscut:system/error-format
+      - ydk:error:api/not-found
+      - ydk:error:api/method-not-allowed
+      - ydk:error:api/internal-error
+      - ydk:error:api/not-ready
+      - ydk:config:ops/app
+    spec_refs: [api-and-ui.md, operations.md]
+    description: |
+      Decisions: ADR-016-readiness-independent-of-kafka.md (docs/adrs/).
+      Health handlers, JSON 404/405 and panic recovery were generated; the
+      ydk:config:ops/app middleware "request logging at DEBUG (method, route pattern, status,
+      duration_ms); health routes excluded" was not. Add it in internal/httpapi (wrap in
+      Handler()), and change the panic-recovery log to ERROR "internal error" (route, method,
+      error) per ydk:crosscut:system/logging. Then cover the generated surface with the
+      health.unit cases; in-flight-finishes uses an httptest.Server whose handler blocks
+      while Shutdown runs. Do not change route registration.
+      Start from: ydk test generate --from ydk:test:api/health.unit --lang go --output internal/httpapi/health_test.go
+    acceptance:
+      - "All 5 ydk:test:api/health.unit cases pass (healthz, ready, shutting-down, in-flight-finishes, not-found)"
+      - "405 response keeps Allow and has a JSON body; panic -> 500 {\"error\":\"internal error\"}"
+      - "DEBUG line per request with method, pattern, status, duration_ms; none for /healthz and /readyz"
+      - "internal/httpapi coverage >= 80% together with the handler tasks"
+    test_strategy: "httptest unit tests, log capture via slog on a buffer."
+    depends_on: []
+
+  - id: T-page
+    title: "Build the single page UI and server-side instance label"
+    story: S-page
+    component_refs:
+      - ydk:page:ui/main
+      - ydk:component:ui/send-form
+      - ydk:component:ui/received-list
+      - ydk:route:api/index
+      - ydk:req:ui/keep-text-on-error
+      - ydk:req:ui/plain-text-rendering
+    spec_refs: [api-and-ui.md]
+    description: |
+      Decisions: ADR-003-ui-polling.md, ADR-015-tech-stack.md (docs/adrs/).
+      web/main.html is three YDK-TODO comments (not registered TODOs). Implement it as one
+      file with inline CSS/JS, no external resources:
+      - Header: 'clopy-paste' and '[<INSTANCE_NAME>]'. Add Deps.InstanceName in httpapi and
+        insert it server-side in handleIndex (html-escaped placeholder replacement, once at
+        startup or per request).
+      - Send form: username (maxlength 128, localStorage remember/restore), textarea about
+        half the screen (maxlength 1000) with live counter, Send disabled while in flight;
+        status 'sent' (clear text, reset counter), 503 -> 'Kafka: disconnected', other ->
+        'error: <server message>'; text kept on every failure.
+      - Received list: heading 'Received from other side'; poll GET /api/messages every 2 s
+        and immediately on username change; no polling while empty; failed poll keeps the
+        last list; item = local HH:MM:SS, text in a pre-wrap element via textContent only,
+        copy button (navigator.clipboard when window.isSecureContext, else hidden textarea +
+        document.execCommand('copy')).
+      - Layout two 50/50 columns, stacked below 700 px.
+      Add to scripts/lint.sh a grep that fails on innerHTML or insertAdjacentHTML in web/*.html
+      (round-trip.e2e plain-text case).
+    acceptance:
+      - "GET / returns the page with the escaped instance name; unit test in internal/httpapi asserts it"
+      - "web/main.html has no innerHTML/insertAdjacentHTML and no external URLs; lint grep enforces it"
+      - "Manual check on a secure and an insecure origin: send, status lines, kept text, polling, copy (clipboard is not tested automatically, testing.md)"
+    test_strategy: "Unit test for handleIndex label insertion and escaping; manual browser check per testing.md 'Not Tested Automatically'."
+    depends_on: []
+
+  # ---------------------------------------------------------------- E-kafka
+  - id: T-kafka-publisher
+    title: "franz-go client for SASL_SSL/SCRAM and PLAINTEXT, and Publisher.Publish"
+    story: S-kafka-produce
+    component_refs:
+      - ydk:contract:messaging/Publisher
+      - ydk:ext:kafka/cluster
+      - ydk:event:messaging/message-record
+    spec_refs: [messaging.md, operations.md]
+    description: |
+      Decisions: ADR-008-kafka-security.md, ADR-017-consumer-group-and-offsets.md (docs/adrs/).
+      internal/adapters/kafka: replace Connect() (reads env, no security) with
+      Connect(cfg config.Config) building kgo options: seeds from config; SASL_SSL ->
+      TLS (RootCAs from KAFKA_CA_FILE when set, else system roots) + scram.Auth{...}.AsSha512Mechanism();
+      PLAINTEXT -> no TLS/SASL; producer RequiredAcks(AllISRAcks) with idempotence (default);
+      DefaultProduceTopic = output topic; consumer options ConsumerGroup, ConsumeTopics(input),
+      ConsumeResetOffset(NewOffset().AtEnd()), AutoCommitMarks with 5 s interval. Only
+      franz-go (incl. pkg/sasl/scram, already allowed by ADR-002) - re-vendor if a new
+      subpackage is needed and keep go mod vendor clean.
+      Publisher.Publish (YDK-TODO-007): ProduceSync one record, key = user, value =
+      messaging.EncodeRecordValue(user, text), no headers, honoring ctx; on success log INFO
+      "message sent" (user, length, topic, partition, offset, duration_ms), never the text;
+      on error return a wrapped messaging.ErrKafkaUnavailable. Credentials never logged.
+      Also delete the dead messaging.NewPublisher/publisherStub in internal/messaging/stubs.go
+      (YDK-TODO-002): the adapter is the only Publisher; FakePublisher stays for tests.
+      The adapter must not import httpapi nor call the Censor.
+      No ydk:test unit manifest; add kafka_test.go for option building (mode -> opts, CA
+      file errors) without a broker. Wire-level behaviour is T-kafka-integration.
+    acceptance:
+      - "kafka_test.go covers both security modes and a missing/invalid CA file without a broker"
+      - "go build ./... and go vet ./... pass; go mod vendor produces no diff"
+      - "No panic(\"not implemented\") left for YDK-TODO-002 and YDK-TODO-007"
+    test_strategy: "Unit tests for option construction; behaviour against a broker in T-kafka-integration (CI-only)."
+    depends_on:
+      - "T-config-validation:blocks"
+      - "T-message-rules:blocks"
+
+  - id: T-kafka-consumer
+    title: "Implement the consumer loop (drop invalid, mark offsets, ADR-017)"
+    story: S-kafka-consume
+    component_refs:
+      - ydk:ext:kafka/cluster
+      - ydk:req:messaging/drop-invalid-incoming
+      - ydk:error:messaging/bad-incoming-record
+      - ydk:entity:messaging/KafkaRecord
+    spec_refs: [messaging.md]
+    description: |
+      Decisions: ADR-017-consumer-group-and-offsets.md, ADR-006-limit-violations.md (docs/adrs/).
+      Replace the panic in Consumer.Run (YDK-TODO-008). NewConsumer takes the client, the
+      messaging.Store and a logger. Loop until ctx done: PollFetches; log fetch errors at WARN
+      and keep polling (never exit on broker errors); for each record decode with
+      messaging.DecodeRecordValue (key ignored). Invalid -> WARN "dropped invalid record"
+      (reason, topic, partition, offset; never the value) and mark. Valid -> Store.Add(user,
+      Message{Text, Time: record.Timestamp}) (no re-censoring), INFO "message received"
+      (user, length, topic, partition, offset), then MarkCommitRecords. Committing is done by
+      AutoCommitMarks (5 s) set up in T-kafka-publisher; Run returns cleanly on ctx cancel so
+      shutdown can CommitMarkedOffsets and leave the group.
+      Extract the per-record handling into a function testable without a broker
+      (consumer_test.go with synthetic *kgo.Record values and the real Store).
+    acceptance:
+      - "Unit tests on per-record handling: valid -> stored with record timestamp; each invalid kind -> dropped, WARN fields present, value absent from logs"
+      - "Run returns nil on context cancel and never panics on a bad record"
+      - "No panic(\"not implemented\") left for YDK-TODO-008"
+    test_strategy: "Unit tests for record handling with real Store; loop behaviour in T-kafka-integration (CI-only)."
+    depends_on:
+      - "T-kafka-publisher:blocks"
+      - "T-message-rules:blocks"
+      - "T-store:blocks"
+
+  - id: T-kafka-integration
+    title: "Kafka adapter integration tests against Strimzi (build tag integration)"
+    story: S-kafka-consume
+    component_refs:
+      - ydk:test:messaging/kafka-adapter.integration
+      - ydk:nfr:system/send-latency
+      - ydk:nfr:system/throughput
+      - ydk:nfr:system/cpu
+    spec_refs: [testing.md, messaging.md, operations.md]
+    description: |
+      Implement every case of ydk:test:messaging/kafka-adapter.integration in
+      internal/adapters/kafka/kafka_integration_test.go with //go:build integration, against
+      the real Strimzi broker from make env-up (no mocks). Connection settings come from env
+      (bootstrap, SASL user/password, CA file) and the test skips with a reason when unset.
+      Cases: publish-record-shape, consume-to-store, drop-invalid, new-group-latest,
+      offset-resume, plaintext-mode, bad-credentials, latency-throughput (500 sends, 10
+      goroutines, 1000-code-point text: P95 <= 200 ms, P99 <= 500 ms, >= 50 sends/s, zero
+      errors). Decide how make test-integration reaches the broker (in-cluster Job or
+      port-forward of the plaintext and TLS listeners) and wire make test-integration into
+      the e2e stage in scripts/e2e.sh after env-up.
+      Start from: ydk test generate --from ydk:test:messaging/kafka-adapter.integration --lang go --output internal/adapters/kafka/kafka_integration_test.go
+    acceptance:
+      - "All 8 kafka-adapter.integration cases pass in CI against Strimzi in kind (CI-only verification: no kind/docker/kubectl/make on the dev host)"
+      - "go vet -tags integration ./... passes locally"
+      - "Default go test ./... (no tag) does not compile or run these tests"
+    test_strategy: "Integration tests with build tag, real broker; CI-only verification."
+    depends_on:
+      - "T-kafka-publisher:blocks"
+      - "T-kafka-consumer:blocks"
+
+  # ---------------------------------------------------------------- E-ops runtime
+  - id: T-wiring-shutdown
+    title: "Wire config, Kafka and consumer in main; ordered graceful shutdown"
+    story: S-runtime
+    component_refs:
+      - ydk:crosscut:system/graceful-shutdown
+      - ydk:crosscut:system/logging
+      - ydk:crosscut:system/http-conventions
+      - ydk:config:ops/app
+      - ydk:nfr:system/shutdown-time
+    spec_refs: [operations.md, overview.md]
+    description: |
+      Decisions: ADR-012-logging-stdout-json.md, ADR-016-readiness-independent-of-kafka.md (docs/adrs/).
+      cmd/clopy-paste/main.go ignores cfg, starts no consumer and only shuts the HTTP server.
+      - Config error -> exactly one ERROR "invalid config" naming the variable, exit 1, before
+        listening. Logger level from cfg.LogLevel.
+      - INFO "starting": version, instance, topics, protocol, censor char count (never the
+        password); INFO "ready" once listening.
+      - Build Censor from cfg.CensorChars, Store (with logger), Kafka client via
+        kafka.Connect(cfg), Publisher, Consumer; Deps.InstanceName for the page.
+      - Server timeouts: ReadHeader 5 s, Read 10 s, Write 10 s, Idle 60 s.
+      - Run the consumer in a goroutine.
+      - SIGTERM/SIGINT, one 10 s deadline: SetReady(false) -> srv.Shutdown -> client.Flush ->
+        stop consumer, CommitMarkedOffsets, LeaveGroup -> client.Close -> INFO "shutdown
+        complete" (duration_ms) exit 0; on deadline WARN with the step reached, exit 1.
+      Refactor run() so the sequence is testable with FakePublisher and a blocking handler
+      (main_test.go), without a broker.
+    acceptance:
+      - "main_test.go: a publish blocking 2 s is answered and the sequence finishes within 10 s (ydk:nfr:system/shutdown-time unit method)"
+      - "Invalid config test: one ERROR line naming the variable, non-zero exit, no listener"
+      - "Startup log contains no password value"
+      - "e2e pod deletion exits 0 without SIGKILL is checked in T-e2e-resilience (CI-only)"
+    test_strategy: "Unit test of the shutdown sequence with fakes for the Kafka boundary only."
+    depends_on:
+      - "T-config-validation:blocks"
+      - "T-censor:blocks"
+      - "T-store:blocks"
+      - "T-kafka-publisher:blocks"
+      - "T-kafka-consumer:blocks"
+      - "T-page:blocks"
+
+  # ---------------------------------------------------------------- E-ops chart / CI
+  - id: T-chart-conformance
+    title: "Chart conformance: NetworkPolicy selector, probes, deploy values, render checks"
+    story: S-chart
+    component_refs:
+      - ydk:crosscut:ops/openshift-conventions
+      - ydk:req:ops/secrets-by-reference
+      - ydk:req:ops/network-restricted-exposure
+      - ydk:req:ops/single-replica
+      - ydk:nfr:system/cpu
+    spec_refs: [operations.md]
+    description: |
+      Decisions: ADR-009-local-env-kind-strimzi.md, ADR-014-no-app-auth.md (docs/adrs/).
+      Gaps found in the generated chart and scripts:
+      - values.yaml networkPolicy.ingressNamespaceSelector is {} so the template renders
+        namespaceSelector: {} (all namespaces). Default it to the OpenShift router label
+        policy-group.network.openshift.io/ingress: "" and set
+        kubernetes.io/metadata.name: ingress-nginx in scripts/deploy.sh for kind.
+      - scripts/deploy.sh never sets ingress.enabled=true, so no Ingress renders and e2e
+        cannot reach either release; route.yaml also requires ingress.enabled - make the
+        Route depend on openshift.enabled only (spec: Route when openshift.enabled, else
+        Ingress).
+      - Readiness probe periodSeconds 2, initialDelaySeconds 0 (ydk:nfr:system/startup-time
+        test method).
+      - Add scripts/chart-check.sh (called from scripts/lint.sh) that runs helm template for
+        kind and OpenShift values and asserts: replicas 1, strategy Recreate, no runAsUser /
+        fsGroup, automountServiceAccountToken false, resources 50m/64Mi - 500m/128Mi,
+        GOMEMLIMIT, secretKeyRef for both SASL vars, a dummy password value absent from the
+        output, one NetworkPolicy ingress rule with the selector, Route xor Ingress; and
+        that values.schema.json rejects an unknown key (e.g. kafka.sasl.password).
+    acceptance:
+      - "helm lint --strict and scripts/chart-check.sh pass locally (helm is on the host)"
+      - "Rendered NetworkPolicy never contains an empty namespaceSelector"
+      - "deploy.sh renders an Ingress for both releases (helm template check); install on kind is CI-only verification"
+    test_strategy: "helm template assertions in a POSIX sh script run by make lint."
+    depends_on: []
+
+  - id: T-ci-gates
+    title: "CI: scan on GitHub, e2e and release stages, coverage and dependency gates"
+    story: S-pipeline
+    component_refs:
+      - ydk:crosscut:ops/ci-pipeline
+      - ydk:req:system/dependency-policy
+      - ydk:crosscut:ops/local-environment
+    spec_refs: [operations.md, testing.md]
+    description: |
+      Decisions: ADR-010-ci-make-thin-wrappers.md, ADR-011-pipeline-stages-versioning.md (docs/adrs/).
+      .ydk/config.yaml ci.make_targets is [lint, test, build], so the generated GitHub workflow
+      has no scan, e2e, publish, deploy or smoke stage. Per ydk:crosscut:ops/ci-pipeline:
+      - Set ci.make_targets to [lint, test, build, scan, e2e] and regenerate with
+        ydk ci init --force (GitHub) / --gitlab --force; check the GitLab file keeps
+        SCAN_ENABLED=false (ADR-011, DEFERRED mirror). If ydk ci init cannot express
+        triggers, add a separate hand-written release workflow (publish, deploy, smoke) on
+        main (dev) and tags vX.Y.Z (prod, environment with required reviewers), calling make
+        only. Install trivy/kind/helm/kubectl in the workflow via plain downloads pinned by
+        version, no marketplace actions in core steps.
+      - scripts/test.sh: run with -cover -coverprofile and fail when any of internal/messaging,
+        internal/httpapi, internal/config is below 80%.
+      - scripts/lint.sh: fail when go.mod requires any module other than
+        github.com/twmb/franz-go (and its own transitive requirements) per
+        ydk:req:system/dependency-policy.
+    acceptance:
+      - "GitHub workflow runs lint, test, build, scan, e2e on push/PR; publish, deploy, smoke on main and tags (CI-only verification)"
+      - "scripts/test.sh fails on a package below 80% (demonstrated in CI log)"
+      - "Dependency check fails when a non-allowed module is added (sh script dry test locally)"
+    test_strategy: "CI-only verification for workflows; scripts exercised in the first CI run."
+    depends_on: []
+
+  - id: T-image-size-gate
+    title: "Image size gate in make build"
+    story: S-pipeline
+    component_refs:
+      - ydk:nfr:system/image-size
+    spec_refs: [operations.md]
+    description: |
+      scripts/build.sh builds the image but never measures it. After docker build, compute
+      docker save "$IMAGE" | gzip -c | wc -c and fail when it exceeds 62914560 bytes
+      (ydk:nfr:system/image-size); print the size either way. Skip with a message only when
+      docker is absent (as today).
+    acceptance:
+      - "make build prints the compressed size and fails above 62914560 bytes (CI-only verification: no docker/make on the dev host)"
+    test_strategy: "CI-only verification in the build stage."
+    depends_on: []
+
+  # ---------------------------------------------------------------- E-verify
+  - id: T-e2e-core
+    title: "e2e functional cases and smoke round trip"
+    story: S-e2e
+    component_refs:
+      - ydk:test:system/round-trip.e2e
+      - ydk:crosscut:ops/local-environment
+      - ydk:ext:kafka/external-pipeline
+    spec_refs: [testing.md, operations.md, messaging.md]
+    description: |
+      Implement in test/e2e/round-trip.sh (POSIX sh + curl via test/e2e/lib.sh, only HTTP
+      through each release's Ingress): warm-up probes until both consumer groups have joined
+      (ADR-017), then cases a-to-b, b-to-a, censoring, limits, plain-text, lru-eviction.
+      Local topic wiring (a.out -> B, b.out -> A) stands in for the external pipeline.
+      Add test/smoke/round-trip.sh: one unique message A->B within 10 s, run by make smoke
+      after deploy (ci-pipeline stage 8).
+      Case stubs already exist with ydk:test markers; keep the markers.
+    acceptance:
+      - "Cases a-to-b, b-to-a, censoring, limits, plain-text, lru-eviction pass in make e2e (CI-only verification)"
+      - "make smoke does one functional round trip (CI-only verification)"
+      - "sh -n passes on both scripts locally"
+    test_strategy: "e2e shell tests on kind + Strimzi; CI-only verification."
+    depends_on:
+      - "T-send-handler:blocks"
+      - "T-get-handler:blocks"
+      - "T-wiring-shutdown:blocks"
+      - "T-chart-conformance:blocks"
+
+  - id: T-e2e-resilience
+    title: "e2e latency, Kafka outage, restart-resume and NFR checks"
+    story: S-e2e
+    component_refs:
+      - ydk:test:system/round-trip.e2e
+      - ydk:nfr:system/e2e-latency
+      - ydk:nfr:system/availability
+      - ydk:nfr:system/startup-time
+      - ydk:nfr:system/memory
+      - ydk:nfr:system/shutdown-time
+      - ydk:req:ops/network-restricted-exposure
+    spec_refs: [testing.md, operations.md, api-and-ui.md]
+    description: |
+      Implement the remaining round-trip.sh cases: e2e-latency (20 sends each way, P95 <= 5 s),
+      kafka-down (KafkaNodePool replicas 0: POST 503 with exact body, page and readiness 200,
+      restartCount unchanged; broker back -> 202), restart-resume (delete B pod, send while
+      down, B Ready <= 10 s after container start, message shown). Add checks: pods
+      restartCount 0 and not OOMKilled after the LRU/limits cases (ydk:nfr:system/memory);
+      deleted pod exits 0 without SIGKILL (ydk:nfr:system/shutdown-time); a curl from a pod in
+      an unlabeled namespace to the Service port times out while the Ingress works
+      (ydk:req:ops/network-restricted-exposure). kubectl use is allowed for orchestration and
+      assertions; traffic stays HTTP via Ingress.
+    acceptance:
+      - "Cases e2e-latency, kafka-down, restart-resume pass in make e2e (CI-only verification)"
+      - "Memory, shutdown exit code and NetworkPolicy checks pass (CI-only verification)"
+    test_strategy: "e2e shell tests on kind + Strimzi; CI-only verification."
+    depends_on:
+      - "T-e2e-core:blocks"
