@@ -103,7 +103,8 @@ func parseServers(v string) ([]string, error) {
 	parts := strings.Split(v, ",")
 	for _, p := range parts {
 		host, port, ok := strings.Cut(p, ":")
-		if _, perr := strconv.ParseUint(port, 10, 16); !ok || host == "" || perr != nil {
+		n, perr := strconv.ParseUint(port, 10, 16)
+		if !ok || host == "" || perr != nil || n == 0 || strings.ContainsAny(p, " 	") {
 			return nil, invalid("KAFKA_BOOTSTRAP_SERVERS", "entries must be host:port")
 		}
 	}

@@ -168,7 +168,7 @@ func TestConsumerGroup(t *testing.T) {
 }
 
 func TestBootstrapServers(t *testing.T) {
-	for _, bad := range []string{",", "nohost", "a:1,,b:2", "host:", ":9092", "host:abc"} {
+	for _, bad := range []string{",", "nohost", "a:1,,b:2", "host:", ":9092", "host:abc", "a:1, b:2", "h:0"} {
 		setEnv(t, with(minimal(), "KAFKA_BOOTSTRAP_SERVERS", bad))
 		_, err := Load()
 		if !errors.Is(err, ErrInvalidConfig) || !strings.Contains(err.Error(), "KAFKA_BOOTSTRAP_SERVERS") {
@@ -189,8 +189,9 @@ func TestCensorChars(t *testing.T) {
 	if cfg, err := Load(); err != nil || cfg.CensorChars != "$!~" {
 		t.Fatalf("unset: %q %v", cfg.CensorChars, err)
 	}
-	setEnv(t, with(minimal(), "CENSOR_CHARS", "ÿþ"))
-	_, err := Load()
+	// Windows env cannot carry invalid UTF-8, so exercise validate directly.
+	cfg := Config{InstanceName: "a", KafkaSecurityProtocol: "PLAINTEXT", LogLevel: "INFO", CensorChars: "\xff\xfe"}
+	err := validate(&cfg)
 	if !errors.Is(err, ErrInvalidConfig) || !strings.Contains(err.Error(), "CENSOR_CHARS") {
 		t.Fatalf("invalid utf8: %v", err)
 	}
