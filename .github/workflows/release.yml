@@ -1,0 +1,64 @@
+# Hand-written (ydk ci init cannot express these triggers). ADR-010/ADR-011: stages 6-8
+# (publish, deploy, smoke) on main (environment dev) and on vX.Y.Z tags (environment prod,
+# configure required reviewers on the prod environment in repo settings). Logic is in make.
+name: Release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Publish, deploy, smoke
+    runs-on: ubuntu-latest
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # setup-go v6 reads the toolchain (else go) directive from go.mod; no hard-coded Go version here.
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install trivy, kind, helm, kubectl (pinned downloads)
+        run: |
+          sh scripts/ci-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - name: make lint
+        run: make lint
+      - name: make test
+        run: make test
+      - name: make build
+        run: make build
+      - name: make scan
+        run: make scan
+      - name: Log in to GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GITHUB_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          echo "$GITHUB_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          echo "REGISTRY=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
+      - name: make publish
+        run: make publish
+      # GitHub deploy/smoke target an ephemeral kind cluster (ADR-011).
+      - name: make env-up
+        run: make env-up
+      - name: make load
+        run: make load
+      - name: make deploy
+        run: make deploy
+      - name: make smoke
+        run: make smoke
+      - name: make env-down
+        if: always()
+        run: make env-down
