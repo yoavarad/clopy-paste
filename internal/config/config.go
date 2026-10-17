@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"unicode/utf8"
 )
 
 var instanceNameRe = regexp.MustCompile(`^[a-z0-9-]{1,63}$`)
@@ -124,6 +125,9 @@ func validate(cfg *Config) error {
 		}
 	default:
 		return invalid("KAFKA_SECURITY_PROTOCOL", "must be PLAINTEXT or SASL_SSL")
+	}
+	if !utf8.ValidString(cfg.CensorChars) {
+		return invalid("CENSOR_CHARS", "must be valid UTF-8")
 	}
 	switch cfg.LogLevel {
 	case "DEBUG", "INFO", "WARN", "ERROR":

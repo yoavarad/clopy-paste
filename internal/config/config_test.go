@@ -183,3 +183,15 @@ func unsetenv(t *testing.T, k string) {
 		t.Fatal(err)
 	}
 }
+
+func TestCensorChars(t *testing.T) {
+	setEnv(t, minimal())
+	if cfg, err := Load(); err != nil || cfg.CensorChars != "$!~" {
+		t.Fatalf("unset: %q %v", cfg.CensorChars, err)
+	}
+	setEnv(t, with(minimal(), "CENSOR_CHARS", "ÿþ"))
+	_, err := Load()
+	if !errors.Is(err, ErrInvalidConfig) || !strings.Contains(err.Error(), "CENSOR_CHARS") {
+		t.Fatalf("invalid utf8: %v", err)
+	}
+}
