@@ -10,7 +10,7 @@ import (
 )
 
 func logServer(buf *bytes.Buffer) *Server {
-	return NewServer(Deps{Logger: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))})
+	return NewServer(testDeps(Deps{Logger: slog.New(slog.NewTextHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))}))
 }
 
 // panicHandler serves a route that always panics, independent of which real handlers are implemented.

@@ -33,7 +33,7 @@ func sendServer(pub error, logger *slog.Logger) (http.Handler, *sent) {
 	if logger == nil {
 		logger = slog.New(slog.NewTextHandler(&bytes.Buffer{}, nil))
 	}
-	return NewServer(Deps{Logger: logger, Censor: messaging.NewCensor("$!~"), Publisher: fake}).Handler(), rec
+	return NewServer(testDeps(Deps{Logger: logger, Censor: messaging.NewCensor("$!~"), Publisher: fake})).Handler(), rec
 }
 
 func post(h http.Handler, body string) *httptest.ResponseRecorder {

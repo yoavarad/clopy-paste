@@ -9,7 +9,7 @@ import (
 
 func getIndex(t *testing.T, name string) string {
 	t.Helper()
-	s := NewServer(Deps{InstanceName: name})
+	s := NewServer(testDeps(Deps{InstanceName: name}))
 	rec := httptest.NewRecorder()
 	s.Handler().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
 	if rec.Code != http.StatusOK {

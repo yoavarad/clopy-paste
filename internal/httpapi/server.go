@@ -27,8 +27,17 @@ type Server struct {
 	ready atomic.Bool
 }
 
-// NewServer returns a ready Server.
+// NewServer returns a ready Server. It panics when Censor, Publisher or Store is nil: a
+// missing collaborator is a wiring bug that must fail at startup, not on the first request.
 func NewServer(deps Deps) *Server {
+	switch {
+	case deps.Censor == nil:
+		panic("httpapi: NewServer: nil Censor")
+	case deps.Publisher == nil:
+		panic("httpapi: NewServer: nil Publisher")
+	case deps.Store == nil:
+		panic("httpapi: NewServer: nil Store")
+	}
 	if deps.Logger == nil {
 		deps.Logger = slog.Default()
 	}
