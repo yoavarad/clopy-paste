@@ -19,8 +19,8 @@ layout.
   `cmd/clopy-paste`, `internal/config`, `internal/messaging` (Message, Censor, Store, the
   Publisher port and its fake), `internal/adapters/kafka`, `internal/httpapi`, `web/`.
 - Keep the `messaging` manifest namespace; do not rename namespaces to force separate packages.
-- Run `ydk ignite --skip-verify`: no Anthropic API key is available, so `ydk spec verify` is
-  pending and must run before the first implementation task is closed.
+- Run `ydk ignite --skip-verify`: no Anthropic API key is available to this project, so
+  `ydk spec verify` (LLM reviewers) is not part of the workflow.
 
 ## Alternatives
 - Rename manifest namespaces (`message`, `censor`, `store`) so ignite emits one package each —
@@ -36,4 +36,4 @@ layout.
 - The Kafka adapter lives in `internal/adapters/kafka`; it must not import `internal/httpapi`
   and must not call the Censor (received records are never re-censored).
 - The coverage gate covers `internal/messaging`, `internal/httpapi` and `internal/config`.
-- Spec verification is outstanding until an API key is configured.
+- Spec quality relies on human review in PRs; `ydk spec verify` is never run.
