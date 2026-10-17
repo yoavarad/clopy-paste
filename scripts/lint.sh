@@ -12,6 +12,10 @@ if [ -n "$unformatted" ]; then
   exit 1
 fi
 go vet ./...
+if grep -nE 'innerHTML|insertAdjacentHTML' web/*.html; then
+  echo "lint: web/*.html must not use innerHTML or insertAdjacentHTML (plain-text rendering)" >&2
+  exit 1
+fi
 if [ -d vendor ]; then
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
@@ -21,6 +25,7 @@ fi
 if [ -d "$CHART_DIR" ]; then
   if command -v helm >/dev/null 2>&1; then
     helm lint --strict "$CHART_DIR"
+    sh scripts/chart-check.sh
   else
     echo "lint: helm not found, skipping chart lint"
   fi

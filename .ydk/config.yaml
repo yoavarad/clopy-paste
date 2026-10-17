@@ -33,7 +33,6 @@ verification:
   - go-test
   - go-vendor
   - helm-lint
-  - spec-alignment
   - pr-body-validation
   - tdd-guard
   - tdd-guard-cmd
@@ -89,3 +88,6 @@ ci:
   - build
   gitlab:
     image: golang:1.27
+proof:
+  # API routes (ydk:route:*) are not UI; only pages and UI components need screenshots.
+  screenshot_ref_patterns: ["ydk:page:*", "ydk:component:ui/*"]

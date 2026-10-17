@@ -13,7 +13,8 @@ ingress:
   host: ''
 networkPolicy:
   enabled: true
-  ingressNamespaceSelector: {}
+  ingressNamespaceSelector:
+    policy-group.network.openshift.io/ingress: ''
 resources:
   requests:
     cpu: 50m
