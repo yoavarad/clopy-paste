@@ -32,13 +32,13 @@ func NewClient(seeds []string, opts ...kgo.Opt) (*kgo.Client, error) {
 
 // Connect creates the client main.go wires into the adapters from the loaded config:
 // security mode (ADR-008), acks=all idempotent producer to the output topic, and the
-// consumer group on the input topic starting at the end (ADR-017).
+// consumer group starting at the end (ADR-017). The input topic is not subscribed here:
+// Consumer.Run adds it, so the group is joined only once records are being polled.
 func Connect(cfg config.Config) (*kgo.Client, error) {
 	opts := []kgo.Opt{
 		kgo.RequiredAcks(kgo.AllISRAcks()),
 		kgo.DefaultProduceTopic(cfg.KafkaOutputTopic),
 		kgo.ConsumerGroup(cfg.KafkaConsumerGroup),
-		kgo.ConsumeTopics(cfg.KafkaInputTopic),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AtEnd()),
 		kgo.AutoCommitMarks(),
 		kgo.AutoCommitInterval(autoCommitInterval),
@@ -118,19 +118,4 @@ func (recv *Publisher) Publish(ctx context.Context, user string, text string) er
 		"duration_ms", time.Since(start).Milliseconds(),
 	)
 	return nil
-}
-
-// Consumer polls the input topic (ydk:ext:kafka/cluster endpoint consume).
-type Consumer struct {
-	client *kgo.Client
-}
-
-// NewConsumer wraps an existing client configured with ConsumeTopics/ConsumerGroup.
-func NewConsumer(client *kgo.Client) *Consumer {
-	return &Consumer{client: client}
-}
-
-// Run polls until ctx is done: Fetch records from the other side for the in-memory store
-func (recv *Consumer) Run(ctx context.Context) error {
-	panic("not implemented") // ydk:ext:kafka/cluster.consume: poll, validate, hand records to the domain
 }
