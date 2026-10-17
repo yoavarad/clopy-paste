@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 require helm
 [ -d "$CHART_DIR" ] || die "chart not found at $CHART_DIR (set CHART_DIR)"
 
-helm upgrade --install clopy-paste-a "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace --atomic --wait \
+helm upgrade --install clopy-paste-a "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace --rollback-on-failure --wait \
   --set openshift.enabled=false \
   --set-string image.repository="$IMAGE_REPO" \
   --set-string image.tag="$VERSION" \
@@ -24,7 +24,7 @@ helm upgrade --install clopy-paste-a "$CHART_DIR" --namespace "$NAMESPACE" --cre
   --set-string kafka.sasl.existingSecret="clopy-paste-a-credentials" \
   --set-string kafka.ca.existingSecret="${KAFKA_CLUSTER}-cluster-ca-cert"
 
-helm upgrade --install clopy-paste-b "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace --atomic --wait \
+helm upgrade --install clopy-paste-b "$CHART_DIR" --namespace "$NAMESPACE" --create-namespace --rollback-on-failure --wait \
   --set openshift.enabled=false \
   --set-string image.repository="$IMAGE_REPO" \
   --set-string image.tag="$VERSION" \

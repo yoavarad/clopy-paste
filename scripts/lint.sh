@@ -16,6 +16,29 @@ if grep -nE 'innerHTML|insertAdjacentHTML' web/*.html; then
   echo "lint: web/*.html must not use innerHTML or insertAdjacentHTML (plain-text rendering)" >&2
   exit 1
 fi
+# ydk:req:system/dependency-policy: only github.com/twmb/franz-go plus its own transitive requirements.
+# Direct requirements (no // indirect) other than franz-go itself are rejected; indirect ones must
+# be known franz-go dependencies (extend ALLOWED_INDIRECT when franz-go itself changes).
+: "${ALLOWED_INDIRECT:=github.com/klauspost/compress github.com/pierrec/lz4/v4 github.com/twmb/franz-go/pkg/kmsg}"
+bad=$(awk -v allowed="$ALLOWED_INDIRECT" '
+  BEGIN { n = split(allowed, a, " "); for (i = 1; i <= n; i++) ok[a[i]] = 1 }
+  /^require \($/ { inblock = 1; next }
+  inblock && /^\)/ { inblock = 0; next }
+  {
+    line = $0
+    if (inblock) mod = $1
+    else if ($1 == "require") { mod = $2; sub(/^require[ ]+/, "", line) }
+    else next
+    if (mod == "" || mod ~ /^\/\//) next
+    if (mod == "github.com/twmb/franz-go") next
+    if (line ~ /\/\/ indirect/ && (mod in ok)) next
+    print mod
+  }' go.mod)
+if [ -n "$bad" ]; then
+  echo "lint: go.mod requires modules outside the dependency policy (only franz-go and its transitive requirements):" >&2
+  echo "$bad" >&2
+  exit 1
+fi
 if [ -d vendor ]; then
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
