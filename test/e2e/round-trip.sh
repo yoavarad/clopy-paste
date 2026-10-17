@@ -91,9 +91,9 @@ case_b_to_a() {
 # when: POST on A user 'eve$' text 'a$b!c~'
 # then: GET 'eve_' on B returns 'a_b_c_'; GET 'eve$' on B returns the same
 case_censoring() {
-  send "$HOST_CLOPY_PASTE_A" 'eve$' 'a$b!c~'
-  wait_text "$HOST_CLOPY_PASTE_B" eve_ 'a_b_c_'
-  case "$(messages "$HOST_CLOPY_PASTE_B" 'eve%24')" in *'a_b_c_'*) ;; *) fail "censored lookup of eve\$ missed" ;; esac
+  send "$HOST_CLOPY_PASTE_A" "eve$RUN"'$' 'a$b!c~'"$RUN"
+  wait_text "$HOST_CLOPY_PASTE_B" "eve${RUN}_" "a_b_c_$RUN"
+  case "$(messages "$HOST_CLOPY_PASTE_B" "eve$RUN%24")" in *"a_b_c_$RUN"*) ;; *) fail "censored lookup with raw user missed" ;; esac
 }
 
 # ydk:test:system/round-trip.e2e case=limits
@@ -119,8 +119,8 @@ case_limits() {
 case_plain_text() {
   u="xss-$RUN"
   send "$HOST_CLOPY_PASTE_A" "$u" '<img src=x onerror=alert(1)>'
-  # The JSON encoder escapes < and > as < and >; accept both forms.
-  wait_text "$HOST_CLOPY_PASTE_B" "$u" '<img src=x onerror=alert(1)>' '<img src=x onerror=alert(1)>'
+  # The JSON encoder escapes < and > as \u003c and \u003e; accept both forms.
+  wait_text "$HOST_CLOPY_PASTE_B" "$u" '<img src=x onerror=alert(1)>' '\u003cimg src=x onerror=alert(1)\u003e'
 }
 
 # ydk:test:system/round-trip.e2e case=lru-eviction
@@ -139,12 +139,10 @@ case_lru_eviction() {
   while [ "$n" -le 101 ]; do
     id=$(printf 'u%03d' "$n")
     send "$HOST_CLOPY_PASTE_A" "$id" "m$id"
-    if [ "$n" -eq 100 ]; then
-      wait_text "$HOST_CLOPY_PASTE_B" u100 mu100
-    fi
+    # Topics have 3 partitions: wait for each message so arrival order is the send order.
+    wait_text "$HOST_CLOPY_PASTE_B" "$id" "m$id"
     n=$((n + 1))
   done
-  wait_text "$HOST_CLOPY_PASTE_B" u101 mu101
   [ "$(messages "$HOST_CLOPY_PASTE_B" u001)" = "[]" ] || fail "u001 not evicted"
   case "$(messages "$HOST_CLOPY_PASTE_B" u002)" in *m002*) ;; *) fail "u002 was evicted" ;; esac
 }
