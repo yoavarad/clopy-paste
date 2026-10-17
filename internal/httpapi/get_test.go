@@ -16,11 +16,11 @@ import (
 
 // newGetServer wires a real censor (default list) and the given store.
 func newGetServer(store messaging.Store) *Server {
-	return NewServer(Deps{
+	return NewServer(testDeps(Deps{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
 		Censor: messaging.NewCensor("$!~"),
 		Store:  store,
-	})
+	}))
 }
 
 func TestGetMessages(t *testing.T) {

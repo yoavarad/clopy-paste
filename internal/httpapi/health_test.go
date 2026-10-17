@@ -13,7 +13,7 @@ import (
 )
 
 func newTestServer() *Server {
-	return NewServer(Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))})
+	return NewServer(testDeps(Deps{Logger: slog.New(slog.NewTextHandler(io.Discard, nil))}))
 }
 
 func do(h http.Handler, method, path string) *httptest.ResponseRecorder {
