@@ -105,3 +105,73 @@ func TestDecodeRecordValue(t *testing.T) {
 		t.Fatalf("err %v", err)
 	}
 }
+
+func reasonOf(t *testing.T, in []byte) string {
+	t.Helper()
+	_, _, err := DecodeRecordValue(in)
+	var de *DecodeError
+	if !errors.As(err, &de) {
+		t.Fatalf("want DecodeError for %q, got %v", in, err)
+	}
+	return de.Reason
+}
+
+func TestDecodeReasons(t *testing.T) {
+	long := strings.Repeat("a", MaxTextLen+1)
+	cases := []struct{ in, want string }{
+		{"\xff", ReasonInvalidUTF8},
+		{"{\"user\":\"a\xff\",\"text\":\"b\"}", ReasonInvalidUTF8},
+		{`{"user":"a","text":"\ud800"}`, ReasonInvalidUTF8},
+		{`{"user":"a","text":"\udc00x"}`, ReasonInvalidUTF8},
+		{`{"user":"a","text":"` + string(rune(92)) + `ud800` + string(rune(92)) + `u0041"}`, ReasonInvalidUTF8},
+		{`[1]`, ReasonInvalidJSON},
+		{`{`, ReasonInvalidJSON},
+		{`{"text":"a"}`, ReasonMissingField},
+		{`{"user":1,"text":"a"}`, ReasonWrongType},
+		{`{"user":"","text":"a"}`, ReasonUserLength},
+		{`{"user":"a","text":""}`, ReasonTextLength},
+		{`{"user":"a","text":"` + long + `"}`, ReasonTextLength},
+	}
+	for _, c := range cases {
+		if got := reasonOf(t, []byte(c.in)); got != c.want {
+			t.Errorf("%q: got %s want %s", c.in, got, c.want)
+		}
+	}
+	// valid surrogate pair and escaped backslash before u are fine
+	bs := string(rune(92))
+	in := `{"user":"a","text":"` + bs + `ud83d` + bs + `ude00 ` + bs + bs + `ud800` + bs + `u0041"}`
+	u, x, err := DecodeRecordValue([]byte(in))
+	if err != nil || x != "😀 "+bs+"ud800A" || u != "a" {
+		t.Fatalf("got %q %q %v", u, x, err)
+	}
+}
+
+func TestEncodeNoHTMLEscape(t *testing.T) {
+	got := string(EncodeRecordValue("a<b", "<&>"))
+	if want := `{"user":"a<b","text":"<&>"}`; got != want {
+		t.Fatalf("got %s want %s", got, want)
+	}
+}
+
+func TestWhitespaceCounts(t *testing.T) {
+	for _, s := range []string{" ", "\n", "\t ", strings.Repeat("\n", MaxTextLen)} {
+		if err := ValidateText(s); err != nil {
+			t.Errorf("%q rejected: %v", s, err)
+		}
+		if u, x, err := DecodeRecordValue(EncodeRecordValue("a", s)); err != nil || x != s || u != "a" {
+			t.Errorf("roundtrip %q: %v", s, err)
+		}
+	}
+	if ValidateText(strings.Repeat("\n", MaxTextLen+1)) == nil || ValidateText(strings.Repeat(" ", MaxTextLen+1)) == nil {
+		t.Error("1001 whitespace accepted")
+	}
+}
+
+func TestErrorStrings(t *testing.T) {
+	if got := ValidateUser("").Error(); got != "user must be 1..128 characters" {
+		t.Error(got)
+	}
+	if got := ValidateText("").Error(); got != "text must be 1..1000 characters" {
+		t.Error(got)
+	}
+}
