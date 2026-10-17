@@ -1,0 +1,43 @@
+{
+  "task_id": null,
+  "timestamp": "2026-10-17T14:28:31Z",
+  "checks": [
+    {
+      "name": "go-fmt",
+      "passed": true,
+      "output": "No relevant files changed (*.go, go.mod, go.sum, vendor/) — skipped",
+      "duration_seconds": 0.0,
+      "detail": null
+    },
+    {
+      "name": "go-vet",
+      "passed": true,
+      "output": "No relevant files changed (*.go, go.mod, go.sum, vendor/) — skipped",
+      "duration_seconds": 0.0,
+      "detail": null
+    },
+    {
+      "name": "helm-lint",
+      "passed": true,
+      "output": "No Helm chart files changed — skipped",
+      "duration_seconds": 0.0,
+      "detail": null
+    },
+    {
+      "name": "go-test",
+      "passed": true,
+      "output": "No relevant files changed (*.go, go.mod, go.sum, vendor/) — skipped",
+      "duration_seconds": 0.0,
+      "detail": null
+    },
+    {
+      "name": "go-vendor",
+      "passed": true,
+      "output": "No relevant files changed (*.go, go.mod, go.sum, vendor/) — skipped",
+      "duration_seconds": 0.0,
+      "detail": null
+    }
+  ],
+  "all_passed": true,
+  "total_duration_seconds": 1.1
+}

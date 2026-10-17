@@ -5,13 +5,15 @@ stages:
   - lint
   - test
   - build
+  - scan
+  - e2e
+
+variables:
+  SCAN_ENABLED: "false"  # the scan job runs only when this is "true"
+  E2E_ENABLED: "false"   # hand edit: golang image has no docker/kind; enable on a runner that does
 
 default:
   image: "golang:1.27"
-
-# ADR-011: no trivy DB mirror on GitLab yet, image scan stays off.
-variables:
-  SCAN_ENABLED: "false"
 
 lint:
   stage: lint
@@ -27,3 +29,17 @@ build:
   stage: build
   script:
     - make build
+
+scan:
+  stage: scan
+  script:
+    - make scan
+  rules:
+    - if: '$SCAN_ENABLED == "true"'
+
+e2e:
+  stage: e2e
+  script:
+    - make e2e
+  rules:
+    - if: '$E2E_ENABLED == "true"'

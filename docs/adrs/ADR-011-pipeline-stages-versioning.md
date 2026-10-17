@@ -17,7 +17,7 @@ Stages (all via make targets, ADR-010):
 5. e2e — kind + Strimzi, install `clopy-paste-a` + `clopy-paste-b`, assert A->B and B->A round-trip, censoring,
    limits, LRU eviction via HTTP.
 6. publish — image + Helm chart (OCI) to registry: GHCR on GitHub, GitLab registry on GitLab.
-7. deploy — `helm upgrade --install --atomic --wait` (auto-rollback on failure).
+7. deploy — `helm upgrade --install --rollback-on-failure --wait` (Helm 4 name for --atomic; auto-rollback on failure).
 8. smoke — post-deploy health + round-trip check.
 
 Triggers: stages 1-5 on every push/PR/MR; 6-8 on main merge (env `dev`) and on `vX.Y.Z` tags

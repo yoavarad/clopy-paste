@@ -1,0 +1,3 @@
+PASSED (0.0s)
+
+No Helm chart files changed — skipped
