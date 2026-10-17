@@ -13,6 +13,7 @@ import (
 	"clopy-paste/internal/messaging"
 )
 
+// newGetServer wires a real censor (default list) and the given store.
 func newGetServer(store messaging.Store) *Server {
 	return NewServer(Deps{
 		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
