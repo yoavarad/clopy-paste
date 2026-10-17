@@ -63,14 +63,15 @@ One Go binary (ADR-002, ADR-015). Each piece of behaviour has exactly one owner.
 |---|---|---|---|
 | cmd/clopy-paste | Wiring: load config, build logger, Kafka adapter, store, HTTP server; signal handling and ordered shutdown ([ydk:crosscut:system/graceful-shutdown]) | all internal modules | none |
 | internal/config | Read and validate environment ([ydk:crosscut:ops/environment]); report [ydk:error:ops/invalid-config] | stdlib | every other internal module |
-| internal/message | Domain type [ydk:entity:messaging/Message], length limits and validation shared by send and receive paths | stdlib | every other internal module |
-| internal/censor | Denylist replacement [ydk:contract:messaging/Censor] | stdlib | every other internal module |
-| internal/store | In-memory [ydk:entity:messaging/MessageStore] with FIFO and LRU, operations per [ydk:contract:messaging/Store] | message | kafka, httpapi, franz-go |
-| internal/kafka | franz-go adapter: implements [ydk:contract:messaging/Publisher]; consumer loop that validates records and calls the store | message, store, franz-go | httpapi, censor (received records are never re-censored) |
-| internal/httpapi | Routes, handlers, error format, embedded page; defines the Publisher interface it needs | message, censor, store | kafka, franz-go |
+| internal/messaging | Domain type [ydk:entity:messaging/Message] with length limits and validation shared by send and receive paths; denylist replacement [ydk:contract:messaging/Censor]; in-memory [ydk:entity:messaging/MessageStore] with FIFO and LRU, operations per [ydk:contract:messaging/Store]; the [ydk:contract:messaging/Publisher] port and its fake | stdlib | config, httpapi, adapters/kafka, franz-go |
+| internal/adapters/kafka | franz-go adapter: implements [ydk:contract:messaging/Publisher]; consumer loop that validates records and calls the store | messaging, franz-go | httpapi; never calls the Censor (received records are never re-censored) |
+| internal/httpapi | Routes, handlers, error format, health endpoints; serves the page | messaging, web | adapters/kafka, franz-go |
+| web | Page [ydk:page:ui/main] as HTML embedded with go:embed | stdlib | every internal module |
 
-Depended-on-by: message is used by store, kafka and httpapi; store by kafka and httpapi;
-censor by httpapi only; config by cmd only. No module imports cmd.
+Depended-on-by: messaging is used by adapters/kafka and httpapi; config by cmd only. No module
+imports cmd. Message, Censor and Store share one package (ADR-018), so the rules between them
+are review rules: the store never calls the censor; censor and message validation never touch
+the store.
 
 ## Scope
 

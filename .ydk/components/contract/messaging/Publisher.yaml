@@ -5,6 +5,7 @@ description: |
   the Kafka adapter on franz-go. Faked in handler unit tests; this is the only faked boundary.
   Handlers never import the Kafka adapter or franz-go. Kafka state reaches the UI only through
   the result of Publish (ADR-016).
+ext_ref: ydk:ext:kafka/cluster
 methods:
   Publish:
     description: "Produce one ydk:event:messaging/message-record to the output topic (acks=all, idempotent) and block until the broker ack or ctx expiry"
