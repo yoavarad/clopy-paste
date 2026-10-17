@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -72,6 +73,32 @@ func TestGetMessages(t *testing.T) {
 		h := newGetServer(messaging.NewStore()).Handler()
 		for _, q := range []string{"", "?user=", "?user=" + strings.Repeat("a", 129), "?user=%ff"} {
 			wantJSON(t, do(h, http.MethodGet, "/api/messages"+q), 400, "error", "user must be 1..128 characters")
+		}
+	})
+	t.Run("lru-touch", func(t *testing.T) {
+		st := messaging.NewStore()
+		h := newGetServer(st).Handler()
+		now := time.Now()
+		for i := 0; i < 100; i++ {
+			st.Add(fmt.Sprintf("u%03d", i), messaging.Message{Text: "m", Time: now})
+		}
+		// unknown user: no touch, no entry, no eviction
+		if rec := do(h, http.MethodGet, "/api/messages?user=ghost"); rec.Code != 200 {
+			t.Fatalf("status = %d", rec.Code)
+		}
+		// touch the oldest user via the handler
+		if rec := do(h, http.MethodGet, "/api/messages?user=u000"); rec.Code != 200 {
+			t.Fatalf("status = %d", rec.Code)
+		}
+		st.Add("newcomer", messaging.Message{Text: "n", Time: now})
+		if len(st.Get("u000")) != 1 {
+			t.Fatal("touched user u000 was evicted")
+		}
+		if len(st.Get("u001")) != 0 {
+			t.Fatal("next-oldest u001 survived, want evicted")
+		}
+		if len(st.Get("ghost")) != 0 || len(st.Get("u002")) != 1 {
+			t.Fatal("unknown GET created an entry or evicted a user")
 		}
 	})
 }
