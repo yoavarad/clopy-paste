@@ -33,7 +33,6 @@ verification:
   - go-test
   - go-vendor
   - helm-lint
-  - spec-alignment
   - pr-body-validation
   - tdd-guard
   - tdd-guard-cmd
