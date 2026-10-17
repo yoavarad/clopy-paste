@@ -41,8 +41,3 @@ func (s *Server) handleReadyz(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
-
-// handleSendMessage serves POST /api/messages -- ydk:route:api/send-message: Accepts a message typed on this instance and publishes it to the output topic.
-func (s *Server) handleSendMessage(w http.ResponseWriter, r *http.Request) {
-	panic("not implemented") // ydk:route:api/send-message: POST /api/messages
-}

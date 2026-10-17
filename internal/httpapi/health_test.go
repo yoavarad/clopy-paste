@@ -118,7 +118,6 @@ func TestErrorFormat(t *testing.T) {
 		}
 	})
 	t.Run("panic -> 500 internal error", func(t *testing.T) {
-		// POST /api/messages is still a stub that panics.
-		wantJSON(t, do(newTestServer().Handler(), "POST", "/api/messages"), 500, "error", "internal error")
+		wantJSON(t, do(panicHandler(newTestServer()), "POST", "/api/messages"), 500, "error", "internal error")
 	})
 }
