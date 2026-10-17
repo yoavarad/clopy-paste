@@ -697,8 +697,16 @@ tasks:
       - "GitHub workflow runs lint, test, build, scan, e2e on push/PR; publish, deploy, smoke on main and tags (CI-only verification)"
       - "scripts/test.sh fails on a package below 80% (demonstrated in CI log)"
       - "Dependency check fails when a non-allowed module is added (sh script dry test locally)"
+      - ".ydk/config.yaml verification.go.coverage_min restored to 80 (set to 0 during bootstrap) and ydk pre-push go-test passes"
     test_strategy: "CI-only verification for workflows; scripts exercised in the first CI run."
-    depends_on: []
+    depends_on:
+      - "T-config-validation:blocks"
+      - "T-message-rules:blocks"
+      - "T-censor:blocks"
+      - "T-store:blocks"
+      - "T-http-surface:blocks"
+      - "T-send-handler:blocks"
+      - "T-get-handler:blocks"
 
   - id: T-image-size-gate
     title: "Image size gate in make build"
