@@ -14,6 +14,13 @@ kubectl config use-context "kind-$CLUSTER"
 
 : "${INGRESS_NGINX_MANIFEST:=https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.12.1/deploy/static/provider/kind/deploy.yaml}"
 kubectl apply -f "$INGRESS_NGINX_MANIFEST"
+# worker_processes defaults to the host core count, each with its own reuseport listener. On a
+# many-core host (22 under WSL) some listeners end up with no worker, and connections hashed
+# to them hang forever. One shared listener and two workers avoid that. The apply above resets
+# the configmap, so a re-run patches and restarts again (about 20 s).
+kubectl -n ingress-nginx patch configmap ingress-nginx-controller --type merge \
+  -p '{"data":{"reuse-port":"false","worker-processes":"2"}}'
+kubectl -n ingress-nginx rollout restart deployment/ingress-nginx-controller
 kubectl -n ingress-nginx rollout status deployment/ingress-nginx-controller --timeout=300s
 
 kubectl create namespace "$NAMESPACE" --dry-run=client -o yaml | kubectl apply -f -
