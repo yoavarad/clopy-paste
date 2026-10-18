@@ -1,0 +1,171 @@
+# Dev pipeline optimization plan (ydk task create-batch format).
+# Validate: PYTHONUTF8=1 ydk task create-batch --from docs/planning/pipeline-batch.yaml --dry-run
+# Source: pipeline review on 2026-10-18 plus measured GitHub Actions step times (last 5 CI runs,
+# last 2 Release runs). CI job today: about 5.5 min, one serial job:
+#   make e2e 174-191 s (env-up about 170 s of it), make build 52-63 s, setup-go 15-20 s,
+#   make scan 14-25 s, make test 9-12 s, ydk verify 4-13 s, make lint 2-3 s, tools 4-5 s.
+# Release (push to main): lint, test, build and scan again, then env-up 168-173 s, smoke 2-5 s.
+# ci.yml and release.yml carry hand edits that `ydk ci init --force` would undo; keep the
+# "Hand edit" comments on every changed step.
+
+epics:
+  - id: E-pipeline
+    title: "Dev pipeline optimization"
+    description: >-
+      Faster and more reliable CI/CD and local loop: parallel CI jobs, no duplicated gates,
+      cached image builds and cluster bring-up, integration tests in CI, deterministic e2e
+      waits and a documented local e2e setup on WSL.
+    spec_refs: [operations.md, testing.md]
+
+stories:
+  - id: S-fast-pipeline
+    title: "Every change gets a fast, trustworthy pipeline result"
+    epic: E-pipeline
+    spec_refs: [operations.md, testing.md]
+    description: "Decisions: ADR-010 (CI tooling), ADR-011 (deploy) in docs/adrs/."
+    acceptance:
+      - "PR CI wall clock drops measurably from the 2026-10-18 baseline (about 5.5 min), with lint/test results first"
+      - "No gate runs twice on the same SHA without a reason"
+      - "Integration-tagged Kafka tests run in CI"
+      - "e2e can be run locally on the Windows host through WSL with a documented setup"
+
+tasks:
+  - id: T-ci-parallel-jobs
+    title: "Split CI into parallel jobs with timeouts, path filter and no duplicate verify"
+    story: S-fast-pipeline
+    spec_refs: [operations.md]
+    description: |
+      .github/workflows/ci.yml is one serial job (tools, lint, test, build, scan, e2e, ydk install,
+      ydk verify). Split it:
+      - checks: make lint, make test, ydk verify. In CI pass --skip-plugin for go-fmt, go-vet,
+        go-test, go-vendor and helm-lint (make lint/test already ran them); keep the guards and
+        pr-body-validation.
+      - image: make build + make scan; save the image as an artifact (docker save | gzip).
+      - e2e: needs image; loads the artifact instead of rebuilding (scripts/e2e.sh gets a
+        skip-build path when the image already exists).
+      - timeout-minutes on every job (checks 10, image 15, e2e 30) in ci.yml and release.yml.
+      - Docs-only changes (docs/**, *.md, .ydk/retros/**) skip image and e2e through a small
+        paths-filter gate job, so required checks still report.
+      Keep the `continue-on-error` on e2e until #37 removes it.
+    acceptance:
+      - "checks, image and e2e run as separate jobs; checks report first"
+      - "ydk verify in CI no longer re-runs go test, go vet, gofmt, vendor or helm lint"
+      - "Every job in ci.yml and release.yml has timeout-minutes"
+      - "A docs-only PR skips image and e2e and still gets green required checks"
+      - "PR wall clock before/after recorded in the PR body"
+    test_strategy: "CI-only verification: compare run timings with the baseline in this file."
+    depends_on: []
+
+  - id: T-image-build-cache
+    title: "Cache the image build and stop compiling the binary twice"
+    story: S-fast-pipeline
+    spec_refs: [operations.md]
+    description: |
+      make build takes 52-63 s on every run:
+      - scripts/build.sh compiles bin/ on the host and the Dockerfile compiles again; nothing in
+        CI uses bin/. Skip the host build when docker is available (or put it behind HOST_BIN=1).
+      - Use docker buildx with a GitHub Actions layer cache (type=gha) in CI, --load locally.
+      - Dockerfile: RUN --mount=type=cache,target=/root/.cache/go-build on the go build step
+        (works with --network=none).
+      - Size gate: stream `docker save | gzip | wc -c` instead of writing a tarball.
+      Local WSL builds need docker-buildx (already required by RUN --network=none).
+    acceptance:
+      - "Second CI run with no Go changes builds the image in a fraction of the baseline 52-63 s"
+      - "The binary is compiled once per build"
+      - "The image size gate still fails an oversized image (dry test kept)"
+    test_strategy: "Stubbed-docker dry test for the size gate; CI timings for the cache."
+    depends_on: [T-ci-parallel-jobs]
+
+  - id: T-env-up-speed
+    title: "Cut kind + Strimzi bring-up time and network dependencies"
+    story: S-fast-pipeline
+    spec_refs: [operations.md, testing.md]
+    description: |
+      make env-up takes 168-173 s in CI and is most of e2e and release:
+      - Pin the kind node image (deploy/local/kind-config.yaml) by digest.
+      - Vendor the ingress-nginx manifest into deploy/local/ (today fetched from
+        raw.githubusercontent.com each run).
+      - Pin and cache the Strimzi chart; pre-pull the Strimzi operator and Kafka images on the
+        runner (actions/cache of a docker save tarball keyed on the versions) and kind load them.
+      - Apply ingress and Strimzi together and wait for both at the end, instead of waiting for
+        ingress first.
+      - Cache the pinned tools (~/.local/bin keyed on scripts/tools.sh) and the trivy DB
+        (~/.cache/trivy, keyed by date).
+    acceptance:
+      - "make env-up in CI is measurably faster than the 168-173 s baseline with a warm cache"
+      - "env-up makes no request to raw.githubusercontent.com"
+      - "Pinned versions and digests live in scripts/tools.sh, verified like the other tools"
+    test_strategy: "CI-only verification; local run through WSL (T-local-loop doc)."
+    depends_on: [T-ci-parallel-jobs]
+
+  - id: T-release-reuse-ci
+    title: "Release reuses the CI result and smoke-tests the published image"
+    story: S-fast-pipeline
+    spec_refs: [operations.md]
+    description: |
+      .github/workflows/release.yml re-runs lint, test, build and scan on the same SHA CI just
+      verified, and smoke-tests the locally loaded image rather than the one pushed to GHCR.
+      - On main: trigger from workflow_run of a successful CI, reuse the CI image artifact.
+      - On tags: keep the full gate, in a job without `environment:`; only the publish/deploy
+        job carries the prod environment, so approval happens after checks pass.
+      - Deploy and smoke the image pulled from GHCR (IMAGE_REPO set to the registry), or smoke
+        before publishing; a failed smoke must not leave a newly pushed image as latest.
+    acceptance:
+      - "A merge to main does not re-run lint, test, build or scan"
+      - "Tag releases ask for prod approval only after checks pass"
+      - "Smoke runs against the exact image that is published"
+    test_strategy: "CI-only verification on a merge to main and a test tag on a fork or dry run."
+    depends_on: [T-ci-parallel-jobs, T-image-build-cache]
+
+  - id: T-integration-in-ci
+    title: "Run the integration-tagged Kafka tests in CI"
+    story: S-fast-pipeline
+    spec_refs: [testing.md]
+    description: |
+      internal/adapters/kafka/integration_test.go (build tag integration, make test-integration)
+      runs in no workflow. Run it in the e2e job after env-up, where the Strimzi cluster
+      already exists, before deploying the releases.
+    acceptance:
+      - "make test-integration runs in CI on every PR that runs e2e and its result is visible in the log"
+      - "A failing integration test fails the job (not continue-on-error)"
+    test_strategy: "CI-only verification."
+    depends_on: [T-ci-parallel-jobs]
+
+  - id: T-e2e-determinism
+    title: "Deterministic e2e waits and run-scoped data in the functional cases"
+    story: S-fast-pipeline
+    spec_refs: [testing.md]
+    description: |
+      Leftovers from the #36 review in test/e2e/round-trip.sh:
+      - limits: replace the fixed `sleep 3` with a sentinel: send a valid message after the
+        rejected ones, wait for it on B, then assert the rejected ones are absent.
+      - lru-eviction: user ids u001..u101 are not scoped by the run id, and the 101 sends are
+        serial send+poll; prefix ids with the run id and wait once for the last one where
+        ordering allows (or document why serial is required).
+      - lru-eviction: check u002 has exactly 1 item, not a substring match.
+      - `sleep 0.25` is not POSIX; use a helper that falls back to `sleep 1`.
+      Start after #37 lands (it edits the same file).
+    acceptance:
+      - "No fixed sleeps used as assertions in round-trip.sh"
+      - "Re-running make e2e with KEEP_ENV=1 passes without a fresh cluster"
+      - "e2e step time does not grow"
+    test_strategy: "Local make e2e through WSL twice with KEEP_ENV=1, then CI."
+    depends_on: []
+
+  - id: T-local-loop
+    title: "Fast local loop: visible race skips, streamed test output, documented WSL e2e"
+    story: S-fast-pipeline
+    spec_refs: [testing.md]
+    description: |
+      - scripts/test.sh silently drops -race without a C compiler; print a visible warning.
+      - scripts/test.sh buffers all output; stream it (tee) while keeping the coverage gate.
+      - docs/dev-setup.md: Windows host setup for local e2e through WSL Ubuntu (docker.io,
+        docker-buildx, make, Go from go.dev with checksum, tools via
+        `TOOLS_BIN=/usr/local/bin sh scripts/ci-tools.sh`, ~/.wslconfig memory=8GB), how to run
+        `make e2e` and `KEEP_ENV=1`, and how to clean up a left-over kind cluster.
+      - Add `make check` (lint + test, no cluster).
+    acceptance:
+      - "test.sh prints a warning when -race is skipped and streams test output"
+      - "docs/dev-setup.md lets a new Windows machine run make e2e from WSL"
+    test_strategy: "Local: run scripts/test.sh with and without gcc on PATH; follow dev-setup.md on this host."
+    depends_on: []
