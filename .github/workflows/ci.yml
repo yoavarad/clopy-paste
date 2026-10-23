@@ -103,7 +103,10 @@ jobs:
         run: |
           sh scripts/ci-tools.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: docker/setup-buildx-action@v3
       - name: make build
+        env:
+          CACHE_GHA: "1"
         run: make build
       - name: make scan
         run: make scan
