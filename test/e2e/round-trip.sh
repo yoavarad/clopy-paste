@@ -240,6 +240,12 @@ case_pod_health() {
   done
 }
 
+# probe_create <namespace>: create the curl probe pod unless an earlier attempt already did.
+probe_create() {
+  kubectl -n "$1" get pod probe || kubectl -n "$1" run probe --image="$CURL_IMAGE" --restart=Never --command -- \
+    curl -sS -m 5 -o /dev/null "http://clopy-paste-a.$NAMESPACE.svc:8080/readyz"
+}
+
 # ydk:req:ops/network-restricted-exposure
 # given: NetworkPolicy admits only the ingress-nginx namespace
 # when: curl the A Service port from a pod in a fresh unlabeled namespace; GET A through the Ingress
@@ -249,9 +255,7 @@ case_network_policy() {
   kubectl create namespace "$np_ns" >/dev/null
   trap 'kubectl delete namespace "$np_ns" --wait=false >/dev/null 2>&1 || true' EXIT
   # The default ServiceAccount of a new namespace appears asynchronously; retry the create.
-  poll_until 30 kubectl -n "$np_ns" run probe --image="$CURL_IMAGE" --restart=Never --command -- \
-    curl -sS -m 5 -o /dev/null "http://clopy-paste-a.$NAMESPACE.svc:8080/readyz" >/dev/null 2>&1 ||
-    fail "probe pod not created"
+  poll_until 30 probe_create "$np_ns" >/dev/null 2>&1 || fail "probe pod not created"
   np_i=0
   while :; do
     np_phase=$(kubectl -n "$np_ns" get pod probe -o jsonpath='{.status.phase}')
@@ -283,7 +287,7 @@ kafka_up() {
   kc wait "kafka/$KAFKA_CLUSTER" --for=condition=Ready --timeout=600s >/dev/null || fail "Kafka not Ready"
   # Ephemeral storage: the new broker has no topics or SCRAM users. Touch the CRs so the entity
   # operator recreates them now instead of at its next periodic reconcile.
-  kc annotate kafkatopic,kafkauser --all "e2e-resync=$RUN" --overwrite >/dev/null
+  kc annotate kafkatopic,kafkauser --all "e2e-resync=$RUN" --overwrite >/dev/null || echo "warn: KafkaTopic/KafkaUser resync annotate failed" >&2
 }
 
 # ydk:test:system/round-trip.e2e case=kafka-down
@@ -328,10 +332,13 @@ case_restart_resume() {
   rr_old=$(pod_of clopy-paste-b)
   [ -n "$rr_old" ] || fail "no pod for clopy-paste-b"
   rr_watch=$(mktemp)
-  kc get pod "$rr_old" -w -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}{"\n"}' >"$rr_watch" 2>/dev/null &
+  # kubectl directly (not the kc function) so $! is the watch process itself and kill reaches it.
+  kubectl -n "$NAMESPACE" get pod "$rr_old" -w \
+    -o jsonpath='{.status.containerStatuses[0].state.terminated.exitCode}{"\n"}' >"$rr_watch" &
   rr_wpid=$!
   trap 'kill "$rr_wpid" 2>/dev/null || true; rm -f "$rr_watch"' EXIT
-  sleep 1
+  # The watch prints the current (running, empty) state first; wait for it so no event is missed.
+  poll_until 10 test -s "$rr_watch" || fail "pod watch on $rr_old did not start"
   kc delete pod "$rr_old" --wait=false >/dev/null
   # Grace period is 15 s; the process must exit by itself well before SIGKILL.
   poll_until 20 grep -q '[0-9]' "$rr_watch" || fail "$rr_old did not report an exit code within 20 s"
