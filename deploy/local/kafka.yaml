@@ -21,6 +21,7 @@ metadata:
   namespace: clopy-paste
 spec:
   kafka:
+    version: 4.2.1
     listeners:
       - name: plain
         port: 9092

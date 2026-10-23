@@ -35,6 +35,17 @@ jobs:
         run: |
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/tools.sh', 'scripts/ci-tools.sh') }}
+      - id: date
+        run: echo "d=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.d }}
+          restore-keys: trivy-db-
       - name: Install trivy, kind, helm, kubectl (pinned downloads)
         run: |
           sh scripts/ci-tools.sh
@@ -57,6 +68,12 @@ jobs:
       - name: make publish
         run: make publish
       # GitHub deploy/smoke target an ephemeral kind cluster (ADR-011).
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/clopy-paste
+          key: env-images-${{ hashFiles('scripts/tools.sh') }}
+      - name: Preload env images (docker save cache)
+        run: sh scripts/env-images.sh
       - name: make env-up
         run: make env-up
       - name: make load

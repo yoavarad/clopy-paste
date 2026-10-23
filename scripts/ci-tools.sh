@@ -7,6 +7,11 @@ cd "$(dirname "$0")/.."
 . scripts/tools.sh
 
 : "${TOOLS_BIN:=$HOME/.local/bin}"
+stamp=$(cat scripts/tools.sh scripts/ci-tools.sh | sha256sum | cut -d" " -f1)
+if [ "$(cat "$TOOLS_BIN/.ci-tools-stamp" 2>/dev/null || true)" = "$stamp" ]; then
+  echo "ci-tools: cached tools up to date in $TOOLS_BIN"
+  exit 0
+fi
 require curl tar sha256sum
 mkdir -p "$TOOLS_BIN"
 tmp=$(mktemp -d)
@@ -32,4 +37,5 @@ install -m 0755 "$tmp/linux-amd64/helm" "$TOOLS_BIN/helm"
 fetch "https://dl.k8s.io/release/v${KUBECTL_VERSION}/bin/linux/amd64/kubectl" kubectl "$KUBECTL_SHA256"
 install -m 0755 "$tmp/kubectl" "$TOOLS_BIN/kubectl"
 
+echo "$stamp" > "$TOOLS_BIN/.ci-tools-stamp"
 echo "ci-tools: installed trivy $TRIVY_VERSION, kind $KIND_VERSION, helm $HELM_VERSION, kubectl $KUBECTL_VERSION into $TOOLS_BIN"
