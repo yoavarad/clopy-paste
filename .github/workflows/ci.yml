@@ -171,4 +171,12 @@ jobs:
       - name: make e2e
         env:
           E2E_SKIP_BUILD: "1"
+          # Keep the cluster so the diagnostics step below can inspect it; the runner is discarded anyway.
+          KEEP_ENV: "1"
         run: make e2e
+      - name: Cluster diagnostics
+        if: failure()
+        run: |
+          kubectl get pods -A -o wide || true
+          kubectl -n ingress-nginx describe pods || true
+          kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true
