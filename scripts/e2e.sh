@@ -14,6 +14,8 @@ if [ "$created" = 1 ] && [ "${KEEP_ENV:-0}" != 1 ]; then
   trap 'sh scripts/env-down.sh' EXIT
 fi
 sh scripts/env-up.sh
+# Kafka adapter integration tests run against the fresh Strimzi cluster, before the releases deploy.
+sh scripts/test-integration.sh
 # E2E_SKIP_BUILD=1 reuses an image that is already loaded (CI loads it from an artifact).
 if [ "${E2E_SKIP_BUILD:-0}" != 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
   sh scripts/build.sh

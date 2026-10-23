@@ -167,6 +167,7 @@ jobs:
           key: env-images-${{ hashFiles('scripts/tools.sh') }}
       - name: Preload env images (docker save cache)
         run: sh scripts/env-images.sh
+      # make e2e runs make test-integration (Kafka adapter) after env-up; a failure fails this job.
       - name: make e2e
         env:
           E2E_SKIP_BUILD: "1"
