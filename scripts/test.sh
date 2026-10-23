@@ -12,14 +12,14 @@ set --
 # -race needs cgo and a C compiler.
 if [ "$(go env CGO_ENABLED)" = 1 ] && command -v "$(go env CC)" >/dev/null 2>&1; then
   set -- -race
+else
+  echo "test: WARNING -race skipped (needs CGO_ENABLED=1 and a C compiler such as gcc on PATH)" >&2
 fi
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
-if ! go test "$@" -cover -coverprofile="$tmp/cover.out" ./... >"$tmp/out.txt" 2>&1; then
-  cat "$tmp/out.txt"
-  exit 1
-fi
-cat "$tmp/out.txt"
+# Stream output while it runs; capture go test's exit code (a pipe would hide it).
+{ go test "$@" -cover -coverprofile="$tmp/cover.out" ./... 2>&1; echo $? >"$tmp/rc"; } | tee "$tmp/out.txt"
+[ "$(cat "$tmp/rc")" = 0 ] || exit 1
 fail=0
 for pkg in $COVER_PKGS; do
   pct=$(awk -v p="/$pkg" '
