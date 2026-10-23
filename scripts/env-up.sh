@@ -19,7 +19,7 @@ kubectl config use-context "kind-$CLUSTER"
 if command -v docker >/dev/null 2>&1; then
   for img in $ENV_IMAGES; do
     if docker image inspect "$img" >/dev/null 2>&1; then
-      kind load docker-image --name "$CLUSTER" "$img"
+      kind load docker-image --name "$CLUSTER" "$img" || echo "env-up: preload of $img failed, node will pull it" >&2
     fi
   done
 fi
