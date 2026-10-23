@@ -15,6 +15,7 @@ if [ "$(go env CGO_ENABLED)" = 1 ] && command -v "$(go env CC)" >/dev/null 2>&1;
 else
   echo "test: WARNING -race skipped (needs CGO_ENABLED=1 and a C compiler such as gcc on PATH)" >&2
 fi
+sh test/scripts/build-size-gate.sh
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # Stream output while it runs; capture go test's exit code (a pipe would hide it).

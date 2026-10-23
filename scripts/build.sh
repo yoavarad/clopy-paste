@@ -4,20 +4,31 @@ set -eu
 cd "$(dirname "$0")/.."
 . scripts/env.sh
 
-require go
-mkdir -p bin
-CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "bin/$APP" "$MAIN_PKG"
-echo "build: bin/$APP ($VERSION)"
+have_docker=0
+if [ -f Dockerfile ] && command -v docker >/dev/null 2>&1; then
+  have_docker=1
+fi
+# The Dockerfile compiles the binary, so the host build only runs without docker or with HOST_BIN=1.
+if [ "$have_docker" = 0 ] || [ "${HOST_BIN:-0}" = 1 ]; then
+  require go
+  mkdir -p bin
+  CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$VERSION" -o "bin/$APP" "$MAIN_PKG"
+  echo "build: bin/$APP ($VERSION)"
+fi
 if [ -f Dockerfile ]; then
   if command -v docker >/dev/null 2>&1; then
-    docker build -t "$IMAGE" .
+    # CACHE_GHA=1 (CI) adds the GitHub Actions layer cache; the go build cache is a Dockerfile cache mount.
+    if [ "${CACHE_GHA:-0}" = 1 ]; then
+      docker buildx build --load --build-arg "VERSION=$VERSION" -t "$IMAGE" \n        --cache-from type=gha --cache-to type=gha,mode=max .
+    else
+      docker buildx build --load --build-arg "VERSION=$VERSION" -t "$IMAGE" .
+    fi
     # ydk:nfr:system/image-size: compressed image <= 60 MB (62914560 bytes)
-    MAX_IMAGE_BYTES=62914560
-    tmp="$(mktemp)"
-    trap 'rm -f "$tmp" "$tmp.gz"' EXIT
-    docker save "$IMAGE" -o "$tmp"
-    gzip -c "$tmp" > "$tmp.gz"
-    size="$(wc -c < "$tmp.gz" | tr -d ' ')"
+    : "${MAX_IMAGE_BYTES:=62914560}"
+    docker image inspect "$IMAGE" >/dev/null
+    size="$(docker save "$IMAGE" | gzip -c | wc -c | tr -d ' ')"
+    # No pipefail in sh: a failed docker save leaves a ~20 byte gzip stream, so reject tiny sizes.
+    [ "${size:-0}" -ge "${MIN_IMAGE_BYTES:-50}" ] || { echo "build: FAIL cannot measure image size" >&2; exit 1; }
     case "$size" in
       ''|*[!0-9]*) echo "build: FAIL cannot measure image size" >&2; exit 1 ;;
     esac

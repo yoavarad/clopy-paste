@@ -12,7 +12,7 @@ ARG VERSION=dev
 WORKDIR /src
 ENV CGO_ENABLED=0 GOFLAGS=-mod=vendor GOPROXY=off GOTOOLCHAIN=local
 COPY . .
-RUN --network=none go build -mod=vendor -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/clopy-paste ./cmd/clopy-paste \
+RUN --network=none --mount=type=cache,target=/root/.cache/go-build go build -mod=vendor -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/clopy-paste ./cmd/clopy-paste \
     && chmod 0555 /out/clopy-paste
 
 FROM ${RUNTIME_IMAGE}

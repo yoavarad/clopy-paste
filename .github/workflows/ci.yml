@@ -66,6 +66,10 @@ jobs:
         with:
           go-version-file: go.mod
       # Hand edit (re-apply after ydk ci init --force): lint needs helm.
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/tools.sh', 'scripts/ci-tools.sh') }}
       - name: Install trivy, kind, helm, kubectl (pinned downloads)
         run: |
           sh scripts/ci-tools.sh
@@ -99,11 +103,25 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/tools.sh', 'scripts/ci-tools.sh') }}
+      - id: date
+        run: echo "d=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ steps.date.outputs.d }}
+          restore-keys: trivy-db-
       - name: Install trivy, kind, helm, kubectl (pinned downloads)
         run: |
           sh scripts/ci-tools.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: docker/setup-buildx-action@v3
       - name: make build
+        env:
+          CACHE_GHA: "1"
         run: make build
       - name: make scan
         run: make scan
@@ -130,6 +148,10 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/tools.sh', 'scripts/ci-tools.sh') }}
       - name: Install trivy, kind, helm, kubectl (pinned downloads)
         run: |
           sh scripts/ci-tools.sh
@@ -139,6 +161,12 @@ jobs:
           name: image
       - name: Load image
         run: gunzip -c image.tar.gz | docker load
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/clopy-paste
+          key: env-images-${{ hashFiles('scripts/tools.sh') }}
+      - name: Preload env images (docker save cache)
+        run: sh scripts/env-images.sh
       # make e2e runs make test-integration (Kafka adapter) after env-up; a failure fails this job.
       - name: make e2e
         env:
