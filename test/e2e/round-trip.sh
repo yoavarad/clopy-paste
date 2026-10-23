@@ -16,6 +16,11 @@ messages() {
   http_get "$1" "/api/messages?user=$2"
 }
 
+# nap: sub-second pause; sleep 0.25 is not POSIX, so fall back to 1 s.
+nap() {
+  sleep 0.25 2>/dev/null || sleep 1
+}
+
 # wait_text <host> <user> <fixed-string...>: poll every 250 ms up to 10 s until the body contains any of the strings.
 wait_text() {
   wt_host=$1
@@ -28,7 +33,7 @@ wait_text() {
       case "$wt_body" in *"$wt_s"*) return 0 ;; esac
     done
     wt_i=$((wt_i + 1))
-    sleep 0.25
+    nap
   done
   fail "'$1' not seen for $wt_user on $wt_host within 10 s (last body: $wt_body)"
 }
@@ -107,8 +112,10 @@ case_limits() {
   long_user=$(awk 'BEGIN { for (i = 0; i < 129; i++) printf "u" }')
   post_check "$HOST_CLOPY_PASTE_A" "{\"user\":\"$u\",\"text\":\"$long_text\"}" 400 'text must be 1..1000 characters'
   post_check "$HOST_CLOPY_PASTE_A" "{\"user\":\"$long_user\",\"text\":\"x\"}" 400 'user must be 1..128 characters'
-  sleep 3
-  [ "$(messages "$HOST_CLOPY_PASTE_B" "$u")" = "[]" ] || fail "rejected message reached B"
+  # Sentinel: valid message after the rejected ones proves the pipeline is live; rejected ones are never produced, so none may appear.
+  send "$HOST_CLOPY_PASTE_A" "$u" "sentinel$RUN"
+  wait_text "$HOST_CLOPY_PASTE_B" "$u" "sentinel$RUN"
+  case "$(messages "$HOST_CLOPY_PASTE_B" "$u")" in *aaaaaaaaaa*) fail "rejected message reached B" ;; esac
 }
 
 # ydk:test:system/round-trip.e2e case=plain-text
@@ -129,22 +136,21 @@ case_plain_text() {
 # when: POST on A for u001..u101 one message each; wait for u101 on B
 # then: GET u001 on B returns []; GET u002 returns 1 item
 case_lru_eviction() {
-  # B is not restarted (HTTP only): earlier users are older than u001, so u001 is still the first of
-  # the u001..u101 batch to be evicted and u002 survives. Wait for the first two in order, then the rest.
-  send "$HOST_CLOPY_PASTE_A" u001 m001
-  wait_text "$HOST_CLOPY_PASTE_B" u001 m001
-  send "$HOST_CLOPY_PASTE_A" u002 m002
-  wait_text "$HOST_CLOPY_PASTE_B" u002 m002
-  n=3
+  # Ids are scoped by the run id. B is not restarted (HTTP only): earlier users are older than the first of
+  # the batch, so it is still the first evicted and the second survives. Sends stay serial with a wait each:
+  # topics have 3 partitions, so only waiting per message guarantees arrival order equals send order.
+  n=1
   while [ "$n" -le 101 ]; do
-    id=$(printf 'u%03d' "$n")
+    id=$(printf 'u%03d-%s' "$n" "$RUN")
     send "$HOST_CLOPY_PASTE_A" "$id" "m$id"
-    # Topics have 3 partitions: wait for each message so arrival order is the send order.
     wait_text "$HOST_CLOPY_PASTE_B" "$id" "m$id"
     n=$((n + 1))
   done
-  [ "$(messages "$HOST_CLOPY_PASTE_B" u001)" = "[]" ] || fail "u001 not evicted"
-  case "$(messages "$HOST_CLOPY_PASTE_B" u002)" in *m002*) ;; *) fail "u002 was evicted" ;; esac
+  first="u001-$RUN"
+  second="u002-$RUN"
+  [ "$(messages "$HOST_CLOPY_PASTE_B" "$first")" = "[]" ] || fail "$first not evicted"
+  cnt=$(messages "$HOST_CLOPY_PASTE_B" "$second" | grep -o "m$second" | wc -l | tr -d ' ')
+  [ "$cnt" = 1 ] || fail "$second expected exactly 1 item, got $cnt"
 }
 
 # ydk:test:system/round-trip.e2e case=e2e-latency
