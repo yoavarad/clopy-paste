@@ -20,6 +20,7 @@ jobs:
   release:
     name: Publish, deploy, smoke
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
     steps:
       - uses: actions/checkout@v4

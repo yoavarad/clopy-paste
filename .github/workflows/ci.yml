@@ -18,9 +18,45 @@ env:
   YDK_VERSION: "1.6.0"
 
 jobs:
-  ci:
-    name: Make targets and verify
+  # Docs-only changes (docs/**, *.md, .ydk/retros/**) skip image and e2e. Skipped jobs still
+  # count as passing for required checks.
+  changes:
+    name: Detect code changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      code: ${{ steps.diff.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          base=""
+          case "$EVENT" in
+            pull_request) base="$BASE_SHA" ;;
+            push) base="$BEFORE_SHA" ;;
+          esac
+          if [ -z "$base" ] || [ "$base" = 0000000000000000000000000000000000000000 ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          files=$(git diff --name-only "$base" HEAD) || { echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; }
+          if printf '%s
+' "$files" | grep -qvE '^(docs/|\.ydk/retros/)|\.md$'; then
+            echo "code=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "code=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  checks:
+    name: Lint, test and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,7 +65,7 @@ jobs:
       - uses: actions/setup-go@v6
         with:
           go-version-file: go.mod
-      # Hand edit (re-apply after ydk ci init --force): scan/e2e need trivy, kind, helm, kubectl.
+      # Hand edit (re-apply after ydk ci init --force): lint needs helm.
       - name: Install trivy, kind, helm, kubectl (pinned downloads)
         run: |
           sh scripts/ci-tools.sh
@@ -39,17 +75,74 @@ jobs:
         run: make lint
       - name: make test
         run: make test
+      - uses: astral-sh/setup-uv@v7
+      - name: Install ydk
+        run: uv tool install --python 3.13 "git+https://github.com/yoavarad/ydk@v${YDK_VERSION}"
+      # make lint/test already ran fmt, vet, test, vendor and helm lint; skip those plugins here.
+      - name: ydk verify
+        run: >-
+          ydk verify run --trigger git:pre-push
+          --skip-plugin ai-code-review --skip-plugin spec-alignment
+          --skip-plugin go-fmt --skip-plugin go-vet --skip-plugin go-test
+          --skip-plugin go-vendor --skip-plugin helm-lint
+
+  image:
+    name: Build and scan image
+    needs: changes
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install trivy, kind, helm, kubectl (pinned downloads)
+        run: |
+          sh scripts/ci-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - name: make build
         run: make build
       - name: make scan
         run: make scan
+      - name: Save image
+        run: |
+          . scripts/env.sh
+          docker save "$IMAGE" | gzip > image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: image.tar.gz
+          retention-days: 1
+
+  e2e:
+    name: End-to-end
+    needs: [changes, image]
+    if: needs.changes.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install trivy, kind, helm, kubectl (pinned downloads)
+        run: |
+          sh scripts/ci-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: actions/download-artifact@v4
+        with:
+          name: image
+      - name: Load image
+        run: gunzip -c image.tar.gz | docker load
       # Hand edit: test/e2e cases are TDD red stubs until tasks #36/#37 implement them.
       # #37 removes continue-on-error so e2e blocks again.
       - name: make e2e
         continue-on-error: true
+        env:
+          E2E_SKIP_BUILD: "1"
         run: make e2e
-      - uses: astral-sh/setup-uv@v7
-      - name: Install ydk
-        run: uv tool install --python 3.13 "git+https://github.com/yoavarad/ydk@v${YDK_VERSION}"
-      - name: ydk verify
-        run: ydk verify run --trigger git:pre-push --skip-plugin ai-code-review --skip-plugin spec-alignment

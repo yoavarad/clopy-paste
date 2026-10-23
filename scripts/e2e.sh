@@ -14,7 +14,10 @@ if [ "$created" = 1 ] && [ "${KEEP_ENV:-0}" != 1 ]; then
   trap 'sh scripts/env-down.sh' EXIT
 fi
 sh scripts/env-up.sh
-sh scripts/build.sh
+# E2E_SKIP_BUILD=1 reuses an image that is already loaded (CI loads it from an artifact).
+if [ "${E2E_SKIP_BUILD:-0}" != 1 ] || ! docker image inspect "$IMAGE" >/dev/null 2>&1; then
+  sh scripts/build.sh
+fi
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE was not built (Dockerfile missing?)"
 kind load docker-image "$IMAGE" --name "$CLUSTER"
 sh scripts/deploy.sh
