@@ -281,6 +281,9 @@ kafka_up() {
   poll_until 300 kc get pod "$BROKER_POD" >/dev/null 2>&1 || fail "broker pod not recreated within 300 s"
   kc wait "pod/$BROKER_POD" --for=condition=Ready --timeout=300s >/dev/null || fail "broker not Ready"
   kc wait "kafka/$KAFKA_CLUSTER" --for=condition=Ready --timeout=600s >/dev/null || fail "Kafka not Ready"
+  # Ephemeral storage: the new broker has no topics or SCRAM users. Touch the CRs so the entity
+  # operator recreates them now instead of at its next periodic reconcile.
+  kc annotate kafkatopic,kafkauser --all "e2e-resync=$RUN" --overwrite >/dev/null
 }
 
 # ydk:test:system/round-trip.e2e case=kafka-down
