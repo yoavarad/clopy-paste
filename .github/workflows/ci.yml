@@ -161,8 +161,6 @@ jobs:
           name: image
       - name: Load image
         run: gunzip -c image.tar.gz | docker load
-      # Hand edit: test/e2e cases are TDD red stubs until tasks #36/#37 implement them.
-      # #37 removes continue-on-error so e2e blocks again.
       - uses: actions/cache@v4
         with:
           path: ~/.cache/clopy-paste
@@ -170,7 +168,6 @@ jobs:
       - name: Preload env images (docker save cache)
         run: sh scripts/env-images.sh
       - name: make e2e
-        continue-on-error: true
         env:
           E2E_SKIP_BUILD: "1"
         run: make e2e

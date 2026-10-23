@@ -225,6 +225,25 @@ func TestPublishMapsFailureToKafkaUnavailable(t *testing.T) {
 	}
 }
 
+func TestPublishReturnsAtDeadlineWhenProduceNeverCompletes(t *testing.T) {
+	pub := &Publisher{
+		produce: func(context.Context, *kgo.Record, func(*kgo.Record, error)) {}, // in flight on a dead connection
+		logger:  slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	err := pub.Publish(ctx, "alice", "hi")
+
+	if !errors.Is(err, messaging.ErrKafkaUnavailable) || !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("err = %v, want ErrKafkaUnavailable wrapping DeadlineExceeded", err)
+	}
+	if d := time.Since(start); d > time.Second {
+		t.Errorf("Publish took %v, want it to return at the 100 ms deadline", d)
+	}
+}
+
 func TestPublishCapsDeadlineAtFiveSeconds(t *testing.T) {
 	if publishTimeout != 5*time.Second {
 		t.Errorf("publishTimeout = %v, want 5s (ADR-017)", publishTimeout)
