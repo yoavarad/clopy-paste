@@ -46,8 +46,7 @@ jobs:
             exit 0
           fi
           files=$(git diff --name-only "$base" HEAD) || { echo "code=true" >> "$GITHUB_OUTPUT"; exit 0; }
-          if printf '%s
-' "$files" | grep -qvE '^(docs/|\.ydk/retros/)|\.md$'; then
+          if printf '%s\n' "$files" | grep -qvE '^(docs/|\.ydk/retros/)|\.md$'; then
             echo "code=true" >> "$GITHUB_OUTPUT"
           else
             echo "code=false" >> "$GITHUB_OUTPUT"
@@ -81,7 +80,8 @@ jobs:
         run: make test
       - uses: astral-sh/setup-uv@v7
       - name: Install ydk
-        run: uv tool install --python 3.13 "git+https://github.com/yoavarad/ydk@v${YDK_VERSION}"
+        # --force: the ~/.local/bin tool cache can restore a stale ydk link from an earlier run.
+        run: uv tool install --force --python 3.13 "git+https://github.com/yoavarad/ydk@v${YDK_VERSION}"
       # make lint/test already ran fmt, vet, test, vendor and helm lint; skip those plugins here.
       - name: ydk verify
         run: >-

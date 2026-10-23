@@ -19,7 +19,8 @@ if [ -f Dockerfile ]; then
   if command -v docker >/dev/null 2>&1; then
     # CACHE_GHA=1 (CI) adds the GitHub Actions layer cache; the go build cache is a Dockerfile cache mount.
     if [ "${CACHE_GHA:-0}" = 1 ]; then
-      docker buildx build --load --build-arg "VERSION=$VERSION" -t "$IMAGE" \n        --cache-from type=gha --cache-to type=gha,mode=max .
+      docker buildx build --load --build-arg "VERSION=$VERSION" -t "$IMAGE" \
+        --cache-from type=gha --cache-to type=gha,mode=max .
     else
       docker buildx build --load --build-arg "VERSION=$VERSION" -t "$IMAGE" .
     fi
