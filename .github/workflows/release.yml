@@ -1,27 +1,38 @@
 # Hand-written (ydk ci init cannot express these triggers). ADR-010/ADR-011: stages 6-8
 # (publish, deploy, smoke) on main (environment dev) and on vX.Y.Z tags (environment prod,
 # configure required reviewers on the prod environment in repo settings). Logic is in make.
+#
+# main: runs after a successful CI push run and reuses its image artifact (no lint, test,
+#   build or scan re-run). Docs-only CI runs upload no image, so nothing is released.
+# tags: the full gate runs first in a job without an environment; prod approval is requested
+#   only for the release job, after the checks passed.
+# The release job smoke-tests the image it then pushes, and pushes only after smoke passes,
+# so a failed smoke never leaves a new image in GHCR.
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
     branches: [main]
+  push:
     tags: ['v[0-9]+.[0-9]+.[0-9]+']
 
 permissions:
   contents: read
   packages: write
+  actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.ref }}
   cancel-in-progress: false
 
 jobs:
-  release:
-    name: Publish, deploy, smoke
+  gate:
+    name: Gate (tags only)
+    if: github.event_name == 'push'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
         with:
@@ -31,7 +42,6 @@ jobs:
         with:
           go-version-file: go.mod
       - name: Require tag commit on main
-        if: startsWith(github.ref, 'refs/tags/v')
         run: |
           git fetch origin main
           git merge-base --is-ancestor "$GITHUB_SHA" origin/main
@@ -50,6 +60,7 @@ jobs:
         run: |
           sh scripts/ci-tools.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - uses: docker/setup-buildx-action@v3
       - name: make lint
         run: make lint
       - name: make test
@@ -58,7 +69,87 @@ jobs:
         run: make build
       - name: make scan
         run: make scan
+      - name: Save image
+        run: |
+          . scripts/env.sh
+          docker save "$IMAGE" | gzip > image.tar.gz
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image
+          path: image.tar.gz
+          retention-days: 1
+
+  release:
+    name: Smoke, publish, deploy
+    needs: gate
+    # gate is skipped on main; run unless it failed. On main only after a successful CI push run.
+    if: >-
+      !cancelled() && needs.gate.result != 'failure' && needs.gate.result != 'cancelled' &&
+      (github.event_name == 'push' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ startsWith(github.ref, 'refs/tags/v') && 'prod' || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.local/bin
+          key: tools-${{ runner.os }}-${{ hashFiles('scripts/tools.sh', 'scripts/ci-tools.sh') }}
+      - name: Install trivy, kind, helm, kubectl (pinned downloads)
+        run: |
+          sh scripts/ci-tools.sh
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+      - id: img
+        uses: actions/download-artifact@v4
+        continue-on-error: true
+        with:
+          name: image
+          run-id: ${{ github.event.workflow_run.id || github.run_id }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      # Docs-only CI runs skip the image job: nothing to release. Tags always have the artifact.
+      - name: Require image artifact
+        id: have
+        run: |
+          if [ -f image.tar.gz ]; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "image artifact missing on tag release" >&2
+            exit 1
+          else
+            echo "No CI image artifact (docs-only change); nothing to release."
+            echo "image=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Load image
+        if: steps.have.outputs.image == 'true'
+        run: gunzip -c image.tar.gz | docker load
+      # GitHub deploy/smoke target an ephemeral kind cluster (ADR-011).
+      - uses: actions/cache@v4
+        if: steps.have.outputs.image == 'true'
+        with:
+          path: ~/.cache/clopy-paste
+          key: env-images-${{ hashFiles('scripts/tools.sh') }}
+      - name: Preload env images (docker save cache)
+        if: steps.have.outputs.image == 'true'
+        run: sh scripts/env-images.sh
+      - name: make env-up
+        if: steps.have.outputs.image == 'true'
+        run: make env-up
+      - name: make load
+        if: steps.have.outputs.image == 'true'
+        run: make load
+      - name: make deploy
+        if: steps.have.outputs.image == 'true'
+        run: make deploy
+      - name: make smoke
+        if: steps.have.outputs.image == 'true'
+        run: make smoke
+      # Publish only after smoke passed, pushing the very image smoke ran against.
       - name: Log in to GHCR
+        if: steps.have.outputs.image == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -66,22 +157,8 @@ jobs:
           echo "$GITHUB_TOKEN" | helm registry login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
           echo "REGISTRY=ghcr.io/$(echo "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')" >> "$GITHUB_ENV"
       - name: make publish
+        if: steps.have.outputs.image == 'true'
         run: make publish
-      # GitHub deploy/smoke target an ephemeral kind cluster (ADR-011).
-      - uses: actions/cache@v4
-        with:
-          path: ~/.cache/clopy-paste
-          key: env-images-${{ hashFiles('scripts/tools.sh') }}
-      - name: Preload env images (docker save cache)
-        run: sh scripts/env-images.sh
-      - name: make env-up
-        run: make env-up
-      - name: make load
-        run: make load
-      - name: make deploy
-        run: make deploy
-      - name: make smoke
-        run: make smoke
       - name: make env-down
-        if: always()
+        if: always() && steps.have.outputs.image == 'true'
         run: make env-down
