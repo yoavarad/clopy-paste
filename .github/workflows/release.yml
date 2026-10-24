@@ -24,7 +24,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.workflow_run.head_sha || github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
@@ -77,7 +77,7 @@ jobs:
         with:
           name: image
           path: image.tar.gz
-          retention-days: 1
+          retention-days: 3
 
   release:
     name: Smoke, publish, deploy
@@ -103,26 +103,30 @@ jobs:
         run: |
           sh scripts/ci-tools.sh
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
-      - id: img
-        uses: actions/download-artifact@v4
-        continue-on-error: true
+      # Docs-only CI runs skip the image job: nothing to release. Tags always have the artifact.
+      - name: Check CI image job
+        id: have
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = push ]; then
+            echo "image=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          concl=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs" --paginate             --jq '.jobs[] | select(.name == "Build and scan image") | .conclusion')
+          echo "CI image job conclusion: ${concl:-<none>}"
+          case "$concl" in
+            skipped) echo "No CI image (docs-only change); nothing to release."; echo "image=false" >> "$GITHUB_OUTPUT" ;;
+            success) echo "image=true" >> "$GITHUB_OUTPUT" ;;
+            *) echo "unexpected CI image job state" >&2; exit 1 ;;
+          esac
+      - uses: actions/download-artifact@v4
+        if: steps.have.outputs.image == 'true'
         with:
           name: image
           run-id: ${{ github.event.workflow_run.id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      # Docs-only CI runs skip the image job: nothing to release. Tags always have the artifact.
-      - name: Require image artifact
-        id: have
-        run: |
-          if [ -f image.tar.gz ]; then
-            echo "image=true" >> "$GITHUB_OUTPUT"
-          elif [ "$GITHUB_EVENT_NAME" = push ]; then
-            echo "image artifact missing on tag release" >&2
-            exit 1
-          else
-            echo "No CI image artifact (docs-only change); nothing to release."
-            echo "image=false" >> "$GITHUB_OUTPUT"
-          fi
       - name: Load image
         if: steps.have.outputs.image == 'true'
         run: gunzip -c image.tar.gz | docker load
