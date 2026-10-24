@@ -180,3 +180,8 @@ jobs:
           kubectl get pods -A -o wide || true
           kubectl -n ingress-nginx describe pods || true
           kubectl get events -A --sort-by=.lastTimestamp | tail -60 || true
+          kubectl -n clopy-paste get kafka,kafkatopic,kafkauser || true
+          for d in clopy-paste-a clopy-paste-b kafka-entity-operator; do
+            echo "--- logs $d"; kubectl -n clopy-paste logs "deploy/$d" --all-containers --tail=80 || true
+          done
+          echo "--- logs kafka-dual-role-0"; kubectl -n clopy-paste logs kafka-dual-role-0 --tail=80 || true
