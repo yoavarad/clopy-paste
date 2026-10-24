@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl"
 
@@ -247,5 +248,55 @@ func TestPublishReturnsAtDeadlineWhenProduceNeverCompletes(t *testing.T) {
 func TestPublishCapsDeadlineAtFiveSeconds(t *testing.T) {
 	if publishTimeout != 5*time.Second {
 		t.Errorf("publishTimeout = %v, want 5s (ADR-017)", publishTimeout)
+	}
+}
+
+func TestPublishPurgesTopicOnUnknownTopicIDThenRecovers(t *testing.T) {
+	fail := true
+	var purged []string
+	pub := &Publisher{
+		produce: func(_ context.Context, r *kgo.Record, promise func(*kgo.Record, error)) {
+			r.Topic = "out-topic" // DefaultProduceTopic applied by the client
+			if fail {
+				promise(r, kerr.UnknownTopicID)
+				return
+			}
+			promise(r, nil)
+		},
+		purge:  func(topics ...string) { purged = append(purged, topics...) },
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	err := pub.Publish(context.Background(), "alice", "hi")
+	if !errors.Is(err, messaging.ErrKafkaUnavailable) || !errors.Is(err, kerr.UnknownTopicID) {
+		t.Fatalf("err = %v, want ErrKafkaUnavailable wrapping UNKNOWN_TOPIC_ID", err)
+	}
+	if !slices.Equal(purged, []string{"out-topic"}) {
+		t.Fatalf("purged = %v, want [out-topic]", purged)
+	}
+
+	fail = false // topic rediscovered after the purge
+	if err := pub.Publish(context.Background(), "alice", "hi"); err != nil {
+		t.Fatalf("Publish after purge = %v, want nil", err)
+	}
+	if len(purged) != 1 {
+		t.Errorf("purged again on success: %v", purged)
+	}
+}
+
+func TestPublishDoesNotPurgeOnOtherErrors(t *testing.T) {
+	purged := 0
+	pub := &Publisher{
+		produce: func(_ context.Context, r *kgo.Record, promise func(*kgo.Record, error)) {
+			promise(r, kerr.NotLeaderForPartition)
+		},
+		purge:  func(...string) { purged++ },
+		logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+	}
+
+	_ = pub.Publish(context.Background(), "alice", "hi")
+
+	if purged != 0 {
+		t.Errorf("purge calls = %d, want 0", purged)
 	}
 }

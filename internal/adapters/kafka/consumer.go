@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"unicode/utf8"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"clopy-paste/internal/messaging"
@@ -18,6 +19,9 @@ type Consumer struct {
 	store  messaging.Store
 	logger *slog.Logger
 	mark   func(...*kgo.Record) // client.MarkCommitRecords; replaced in tests
+	// resubscribe purges and re-adds the input topic so a recreated topic (new topic ID) is
+	// rediscovered; franz-go never adopts the new ID by itself. Replaced in tests.
+	resubscribe func()
 }
 
 // NewConsumer wraps a client from Connect; Run subscribes it to topic. logger is slog.Default when nil.
@@ -25,7 +29,12 @@ func NewConsumer(client *kgo.Client, topic string, store messaging.Store, logger
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Consumer{client: client, topic: topic, store: store, logger: logger, mark: client.MarkCommitRecords}
+	c := &Consumer{client: client, topic: topic, store: store, logger: logger, mark: client.MarkCommitRecords}
+	c.resubscribe = func() {
+		client.PurgeTopicsFromConsuming(topic)
+		client.AddConsumeTopics(topic)
+	}
+	return c
 }
 
 // Run subscribes to the input topic (joining the consumer group) and polls until ctx is done
@@ -43,11 +52,21 @@ func (recv *Consumer) Run(ctx context.Context) error {
 	}
 }
 
-// process logs each fetch error at WARN, then handles and marks every record.
+// process logs each fetch error at WARN, then handles and marks every record. An
+// UNKNOWN_TOPIC_ID error on the input topic (deleted and recreated; franz-go surfaces it only
+// once it persists) resubscribes the topic once per poll so consumption resumes without a restart.
 func (recv *Consumer) process(ctx context.Context, fetches kgo.Fetches) {
+	recreated := false
 	fetches.EachError(func(topic string, partition int32, err error) {
 		recv.logger.WarnContext(ctx, "kafka fetch error", "topic", topic, "partition", partition, "error", err)
+		if topic == recv.topic && errors.Is(err, kerr.UnknownTopicID) {
+			recreated = true
+		}
 	})
+	if recreated {
+		recv.logger.WarnContext(ctx, "kafka topic recreated, resubscribing", "topic", recv.topic)
+		recv.resubscribe()
+	}
 	fetches.EachRecord(func(rec *kgo.Record) {
 		recv.handleRecord(ctx, rec)
 		recv.mark(rec)
