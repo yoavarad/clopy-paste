@@ -5,12 +5,14 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"time"
 	"unicode/utf8"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 	"github.com/twmb/franz-go/pkg/sasl/scram"
 
@@ -80,7 +82,9 @@ func tlsConfig(caFile string) (*tls.Config, error) {
 type Publisher struct {
 	// produce is client.Produce; tests replace it to simulate a request that never completes.
 	produce func(ctx context.Context, r *kgo.Record, promise func(*kgo.Record, error))
-	logger  *slog.Logger
+	// purge is client.PurgeTopicsFromProducing; tests replace it to observe topic-recreation recovery.
+	purge  func(topics ...string)
+	logger *slog.Logger
 }
 
 var _ messaging.Publisher = (*Publisher)(nil)
@@ -90,7 +94,7 @@ func NewPublisher(client *kgo.Client, logger *slog.Logger) *Publisher {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Publisher{produce: client.Produce, logger: logger}
+	return &Publisher{produce: client.Produce, purge: client.PurgeTopicsFromProducing, logger: logger}
 }
 
 // newRecord builds one ydk:event:messaging/message-record (ADR-007): key = user, JSON value,
@@ -101,7 +105,9 @@ func newRecord(user, text string) *kgo.Record {
 
 // Publish produces one record to the output topic (acks=all, idempotent) and blocks until the
 // broker acknowledges it, ctx is done, or publishTimeout passes. Failures wrap
-// messaging.ErrKafkaUnavailable. The text is never logged.
+// messaging.ErrKafkaUnavailable. The text is never logged. An UNKNOWN_TOPIC_ID failure (the
+// output topic was deleted and recreated) purges the topic from the producer so the next
+// Publish rediscovers it; franz-go never adopts the new topic ID by itself.
 func (recv *Publisher) Publish(ctx context.Context, user string, text string) error {
 	ctx, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
@@ -121,6 +127,10 @@ func (recv *Publisher) Publish(ctx context.Context, user string, text string) er
 		res.err = ctx.Err()
 	}
 	if res.err != nil {
+		if res.rec != nil && errors.Is(res.err, kerr.UnknownTopicID) {
+			recv.logger.WarnContext(ctx, "kafka topic recreated, purging producer topic", "topic", res.rec.Topic)
+			recv.purge(res.rec.Topic)
+		}
 		return fmt.Errorf("%w: %w", messaging.ErrKafkaUnavailable, res.err)
 	}
 	rec := res.rec

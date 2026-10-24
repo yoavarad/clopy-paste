@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/twmb/franz-go/pkg/kerr"
 	"github.com/twmb/franz-go/pkg/kgo"
 
 	"clopy-paste/internal/messaging"
@@ -224,5 +225,63 @@ func TestProcessWarnsOnFetchErrorAndMarksEveryRecord(t *testing.T) {
 	}
 	if !warned {
 		t.Errorf("no WARN fetch error line: %s", buf.String())
+	}
+}
+
+func TestProcessResubscribesOnceOnUnknownTopicID(t *testing.T) {
+	var buf bytes.Buffer
+	c := newTestConsumer(messaging.NewStore(), &buf)
+	c.mark = func(...*kgo.Record) {}
+	calls := 0
+	c.resubscribe = func() { calls++ }
+	fetches := kgo.Fetches{{Topics: []kgo.FetchTopic{{
+		Topic: "in-topic",
+		Partitions: []kgo.FetchPartition{
+			{Partition: 0, Err: kerr.UnknownTopicID},
+			{Partition: 1, Err: kerr.UnknownTopicID},
+		},
+	}}}}
+
+	c.process(context.Background(), fetches)
+
+	if calls != 1 {
+		t.Fatalf("resubscribe calls = %d, want 1 per poll", calls)
+	}
+	var warned bool
+	for _, line := range logLines(t, &buf) {
+		if line["msg"] == "kafka topic recreated, resubscribing" {
+			warned = line["level"] == "WARN" && line["topic"] == "in-topic"
+		}
+	}
+	if !warned {
+		t.Errorf("no WARN resubscribe line: %s", buf.String())
+	}
+}
+
+func TestProcessDoesNotResubscribeOnOtherErrors(t *testing.T) {
+	c := newTestConsumer(messaging.NewStore(), &bytes.Buffer{})
+	calls := 0
+	c.resubscribe = func() { calls++ }
+	fetches := kgo.Fetches{{Topics: []kgo.FetchTopic{
+		{Topic: "in-topic", Partitions: []kgo.FetchPartition{{Partition: 0, Err: kerr.NotLeaderForPartition}}},
+		{Topic: "other-topic", Partitions: []kgo.FetchPartition{{Partition: 0, Err: kerr.UnknownTopicID}}},
+	}}}
+
+	c.process(context.Background(), fetches)
+
+	if calls != 0 {
+		t.Errorf("resubscribe calls = %d, want 0", calls)
+	}
+}
+
+func TestResubscribeReAddsInputTopic(t *testing.T) {
+	cl := newTestClient(t, baseConfig())
+	c := NewConsumer(cl, "in-topic", messaging.NewStore(), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	cl.AddConsumeTopics("in-topic")
+
+	c.resubscribe()
+
+	if got := cl.GetConsumeTopics(); !slices.Equal(got, []string{"in-topic"}) {
+		t.Errorf("consume topics after resubscribe = %v, want [in-topic]", got)
 	}
 }

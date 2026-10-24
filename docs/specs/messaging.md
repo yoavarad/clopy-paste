@@ -119,6 +119,7 @@ timestamp on the record, key on the record. No step needs data the model lacks.
 | Challenge | Mechanism in this spec |
 |---|---|
 | Kafka down for hours | Send returns [ydk:error:api/kafka-unavailable] after 5 s and the page shows "Kafka: disconnected" with the text kept. Readiness and liveness stay 200 (ADR-016): the page stays reachable and the pod is not restarted. Consumer reconnects and resumes from the committed offset. |
+| Topic deleted and recreated (new topic ID) | franz-go never adopts the new ID, so the app purges and re-adds the topic: a produce failing with UNKNOWN_TOPIC_ID returns [ydk:error:api/kafka-unavailable] and purges the output topic, so the next send succeeds; a persistent UNKNOWN_TOPIC_ID fetch error resubscribes the input topic and consumption resumes. No pod restart; readiness unaffected (ADR-016). |
 | External pipeline down | Sends still succeed (ack from our cluster); messages arrive when it resumes. Not detectable here; documented in [ydk:ext:kafka/external-pipeline]. |
 | Poison record on input topic | Dropped and logged, offset committed ([ydk:req:messaging/drop-invalid-incoming]); never blocks the partition. |
 | Flood of distinct usernames | Store capped at 100 users x 100 messages; memory bounded per [ydk:nfr:system/memory]. Real users can be evicted by a flood; accepted (trusted network, ADR-014). |
