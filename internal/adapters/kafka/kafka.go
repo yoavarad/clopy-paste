@@ -78,8 +78,9 @@ func tlsConfig(caFile string) (*tls.Config, error) {
 
 // Publisher implements messaging.Publisher (ydk:contract:messaging/Publisher) on a franz-go client.
 type Publisher struct {
-	client *kgo.Client
-	logger *slog.Logger
+	// produce is client.Produce; tests replace it to simulate a request that never completes.
+	produce func(ctx context.Context, r *kgo.Record, promise func(*kgo.Record, error))
+	logger  *slog.Logger
 }
 
 var _ messaging.Publisher = (*Publisher)(nil)
@@ -89,7 +90,7 @@ func NewPublisher(client *kgo.Client, logger *slog.Logger) *Publisher {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Publisher{client: client, logger: logger}
+	return &Publisher{produce: client.Produce, logger: logger}
 }
 
 // newRecord builds one ydk:event:messaging/message-record (ADR-007): key = user, JSON value,
@@ -105,10 +106,24 @@ func (recv *Publisher) Publish(ctx context.Context, user string, text string) er
 	ctx, cancel := context.WithTimeout(ctx, publishTimeout)
 	defer cancel()
 	start := time.Now()
-	rec, err := recv.client.ProduceSync(ctx, newRecord(user, text)).First()
-	if err != nil {
-		return fmt.Errorf("%w: %w", messaging.ErrKafkaUnavailable, err)
+	type result struct {
+		rec *kgo.Record
+		err error
 	}
+	done := make(chan result, 1)
+	recv.produce(ctx, newRecord(user, text), func(r *kgo.Record, err error) { done <- result{r, err} })
+	var res result
+	select {
+	case res = <-done:
+	case <-ctx.Done():
+		// franz-go cannot fail a record already in flight on a dead connection until its request
+		// times out (about 30 s), so the deadline is enforced here (ydk:error:api/kafka-unavailable).
+		res.err = ctx.Err()
+	}
+	if res.err != nil {
+		return fmt.Errorf("%w: %w", messaging.ErrKafkaUnavailable, res.err)
+	}
+	rec := res.rec
 	recv.logger.InfoContext(ctx, "message sent",
 		"user", user,
 		"length", utf8.RuneCountInString(text),

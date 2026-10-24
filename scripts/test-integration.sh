@@ -42,4 +42,4 @@ kubectl exec -n "$NAMESPACE" "$KAFKA_IT_POD" -- env \
   "KAFKA_IT_USERNAME=$KAFKA_IT_USER_SECRET" \
   "KAFKA_IT_PASSWORD=$password" \
   "KAFKA_IT_CA_FILE=/tmp/ca.crt" \
-  /tmp/kafka.test -test.v -test.count=1
+  /tmp/kafka.test -test.v -test.count=1 -test.timeout=10m
