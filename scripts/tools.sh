@@ -17,4 +17,6 @@ STRIMZI_CHART_SHA256=0f8a50b2f19bd99482f9fd6e17cf42902f72f9e594a136813ac3f0b7af4
 STRIMZI_KAFKA_VERSION=4.2.1   # must match spec.kafka.version in deploy/local/kafka.yaml
 INGRESS_NGINX_SHA256=cb84b0ea747c9149cce08aef4e95b1e55f183f07299f40e7009043e960a0133f   # deploy/local/ingress-nginx.yaml (controller-v1.12.1, provider/kind)
 # Images preloaded into kind (cached as a docker save tarball in CI); must match the manifest and chart.
-ENV_IMAGES="registry.k8s.io/ingress-nginx/controller:v1.12.1@sha256:d2fbc4ec70d8aa2050dd91a91506e998765e86c96f32cffb56c503c9c34eed5b registry.k8s.io/ingress-nginx/kube-webhook-certgen:v1.5.2@sha256:e8825994b7a2c7497375a9b945f386506ca6a3eda80b89b74ef2db743f66a5ea quay.io/strimzi/operator:${STRIMZI_VERSION} quay.io/strimzi/kafka:${STRIMZI_VERSION}-kafka-${STRIMZI_KAFKA_VERSION}"
+# Digest-pinned images (the ingress-nginx manifest's) are left out: once kind-loaded, containerd fails
+# to start them ("failed to check if this is a checkpoint image"), so the node pulls those itself.
+ENV_IMAGES="quay.io/strimzi/operator:${STRIMZI_VERSION} quay.io/strimzi/kafka:${STRIMZI_VERSION}-kafka-${STRIMZI_KAFKA_VERSION}"
