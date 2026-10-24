@@ -304,7 +304,7 @@ case_kafka_down() {
   trap 'kafka_up' EXIT
   kc scale deployment/strimzi-cluster-operator --replicas=0 >/dev/null
   kc wait pod -l name=strimzi-cluster-operator --for=delete --timeout=120s >/dev/null 2>&1 || true
-  kc delete pod "$BROKER_POD" --wait=false >/dev/null
+  kc delete pod "$BROKER_POD" --grace-period=0 --force --wait=false >/dev/null
   poll_until 300 broker_gone || fail "broker pod still present after 300 s"
   poll_until 120 post_is 503 "$HOST_CLOPY_PASTE_A" "kd-$RUN" || fail "POST on A never returned 503 with Kafka down"
   post_check "$HOST_CLOPY_PASTE_A" "{\"user\":\"kd-$RUN\",\"text\":\"down$RUN\"}" 503 'kafka unavailable, message not sent'
