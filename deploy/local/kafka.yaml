@@ -11,8 +11,13 @@ spec:
   roles:
     - controller
     - broker
+  # Hand edit: persistent (kind's default local-path StorageClass) so a broker restart keeps topics,
+  # topic IDs and SCRAM users, like a real outage. With ephemeral storage the e2e kafka-down case
+  # recreated the topics under new IDs and the client failed with UNKNOWN_TOPIC_ID.
   storage:
-    type: ephemeral
+    type: persistent-claim
+    size: 1Gi
+    deleteClaim: true
 ---
 apiVersion: kafka.strimzi.io/v1
 kind: Kafka
