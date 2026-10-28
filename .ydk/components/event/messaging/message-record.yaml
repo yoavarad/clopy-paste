@@ -14,7 +14,7 @@ payload:
     description: "JSON value field; censored username, 1..128 code points"
   text:
     type: string
-    description: "JSON value field; censored text, 1..1000 code points"
+    description: "JSON value field; censored text, 1..256 code points"
 producers:
   - ydk:route:api/send-message
   - ydk:contract:messaging/Publisher

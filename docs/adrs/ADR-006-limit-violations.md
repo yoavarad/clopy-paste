@@ -4,7 +4,7 @@
 Accepted
 
 ## Context
-Limits: username 1..128 chars, text 1..1000 chars. Counted in Unicode code points, not bytes.
+Limits: username 1..128 chars, text 1..256 chars. Counted in Unicode code points, not bytes.
 Need behavior on violation for both outgoing (user input) and incoming (Kafka) messages.
 
 ## Decision

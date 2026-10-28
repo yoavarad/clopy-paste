@@ -1,0 +1,133 @@
+# Change text-limit-256-auto-split (docs/changes/text-limit-256-auto-split/).
+# Validate: PYTHONUTF8=1 ydk task create-batch --from docs/changes/text-limit-256-auto-split/batch.yaml --dry-run
+
+epics:
+  - id: E-long-text
+    title: "Long text auto-split"
+    description: >-
+      Lower the text limit to 256 Unicode code points and let the page split longer text into
+      numbered chunks sent as separate messages. Server stays the only authority on limits.
+      Change proposal: docs/changes/text-limit-256-auto-split/.
+    spec_refs: [api-and-ui.md, messaging.md]
+
+stories:
+  - id: S-long-text
+    title: "Long text is sent as numbered chunks under a 256 code-point limit"
+    epic: E-long-text
+    spec_refs: [api-and-ui.md, messaging.md]
+    description: "Change: docs/changes/text-limit-256-auto-split/. Decisions: ADR-006-limit-violations.md (amended by a new ADR in Task 2)."
+    component_refs:
+      - ydk:req:messaging/text-length
+      - ydk:entity:messaging/Message
+      - ydk:component:ui/send-form
+      - ydk:error:api/validation-failed
+    acceptance:
+      - "Server accepts text of 1..256 code points and rejects 257+ with validation-failed, on send and receive"
+      - "Page sends text <= 256 code points as one message with no marker"
+      - "Page sends longer text as up to 10 chunks prefixed (i/N), in order, and refuses more than 10"
+      - "Server API, Kafka record contract, store (100/user) and 16384-byte body cap are unchanged"
+
+tasks:
+  - id: T-text-limit-256
+    title: "Lower text limit from 1000 to 256 code points"
+    story: S-long-text
+    component_refs:
+      - ydk:req:messaging/text-length
+      - ydk:entity:messaging/Message
+      - ydk:entity:messaging/KafkaRecord
+      - ydk:error:api/validation-failed
+      - ydk:component:ui/send-form
+      - ydk:test:api/send-message.unit
+      - ydk:test:system/round-trip.e2e
+      - ydk:nfr:system/send-latency
+      - ydk:nfr:system/throughput
+    spec_refs: [messaging.md, api-and-ui.md]
+    description: |
+      Change: docs/changes/text-limit-256-auto-split/ (Task 1). Decisions: ADR-006-limit-violations.md.
+      Lower the text limit from 1000 to 256 Unicode code points everywhere. Nothing else changes
+      (server API shape, Kafka contract, store 100/user, 16384-byte body cap stay as they are).
+      Code:
+      - internal/messaging/message.go:13 MaxTextLen = 256.
+      Tests (boundaries 256 pass / 257 fail, including emoji / multi-byte code points so the
+      count is code points, not bytes):
+      - internal/messaging/message_test.go
+      - internal/httpapi/send_test.go
+      - internal/adapters/kafka/consumer_test.go
+      - test/e2e/round-trip.sh
+      Manifests (replace 1000 with 256 in limits, examples and test cases):
+      - ydk:req:messaging/text-length, ydk:entity:messaging/Message, ydk:entity:messaging/KafkaRecord,
+        ydk:error:api/validation-failed, ydk:component:ui/send-form, ydk:test:api/send-message.unit,
+        ydk:test:system/round-trip.e2e, ydk:nfr:system/send-latency, ydk:nfr:system/throughput.
+      Docs:
+      - docs/specs/api-and-ui.md (counter mock 0/256, "text > 256", "limited to 256 characters").
+      - docs/specs/messaging.md wherever 1000 is the text limit.
+      - docs/project-rules.md:35.
+      - docs/planning/batch.yaml (S-message-rules acceptance "text 1..1000").
+      The textarea maxlength in web/main.html becomes 256 here; Task 2 removes it.
+    acceptance:
+      - "MaxTextLen is 256 in internal/messaging/message.go and no text-limit value of 1000 remains in Go code"
+      - "Unit tests: text of exactly 256 code points is accepted; 257 is rejected with the field name and max 256; both cases also covered with emoji / multi-byte code points (256 emoji accepted, 257 emoji rejected)"
+      - "internal/httpapi/send_test.go: POST with 256 code points returns 202; 257 returns the validation-failed error naming text and 256"
+      - "internal/adapters/kafka/consumer_test.go: a consumed record with 257 code points is rejected by the receive-side check; 256 is stored"
+      - "test/e2e/round-trip.sh uses the 256/257 boundary and passes in CI"
+      - "All listed manifests and docs say 256; grep for the old 1000 text limit in docs/specs, manifests and project-rules finds nothing"
+      - "ydk spec verify passes; go test ./... green; e2e green"
+    test_strategy: "Table-driven Go unit tests at 256/257 with ASCII and emoji; e2e round trip in CI (kind + Strimzi). Locally go test ./...; -race and e2e in CI."
+    depends_on: []
+
+  - id: T-client-auto-split
+    title: "Client-side auto-split of long text in the send form"
+    story: S-long-text
+    component_refs:
+      - ydk:component:ui/send-form
+      - ydk:page:ui/main
+      - ydk:req:messaging/text-length
+      - ydk:req:ui/keep-text-on-error
+      - ydk:route:api/send-message
+      - ydk:crosscut:ops/ci-pipeline
+    spec_refs: [api-and-ui.md, messaging.md]
+    description: |
+      Change: docs/changes/text-limit-256-auto-split/ (Task 2). Depends on the 256 limit (Task 1).
+      The page splits text longer than 256 code points into numbered chunks and sends them as
+      separate messages. The server is unchanged and still rejects > 256.
+      Split logic:
+      - New web/split.js with a pure exported function splitText(text) -> string[] (no DOM).
+        Embedded with the page (go:embed) and loaded by web/main.html.
+      - Length is counted in Unicode code points (Array.from), never UTF-16 units.
+      - <= 256 code points -> [text], no marker.
+      - > 256 -> chunks prefixed "(i/N) "; each chunk body <= 248 code points (prefix is at most
+        8 code points, "(10/10) "), so every chunk incl. prefix is <= 256.
+      - Cut at the last whitespace before the body limit; hard cut at the limit only if the
+        window has no whitespace. Never split a code point (emoji stay whole).
+      - Max 10 chunks; more is "too long".
+      UI (web/main.html, ydk:component:ui/send-form):
+      - Remove the textarea maxlength.
+      - Counter shows code points and the chunk count.
+      - Button: "Send" (<= 256), "Send as X messages" (2..10), disabled with a "too long" note
+        when > 10 chunks.
+      - Send chunks sequentially, awaiting each 202 before the next (same user key -> same
+        partition -> ordered).
+      - Mid-failure: stop, put the unsent text back in the textarea (ydk:req:ui/keep-text-on-error),
+        show "sent k/N - <error>".
+      Tests and CI:
+      - web/split.test.js run with `node --test`; wire it into CI / the verification target
+        (ydk:crosscut:ops/ci-pipeline, Makefile / ydk verify config).
+      Decisions:
+      - New ADR (next free number, ADR-019; ADR-007 is already taken by the Kafka record
+        contract) amending ADR-006: client splits, server still rejects > 256.
+      - Update ydk:component:ui/send-form manifest (split, counter, button states, failure).
+      Unchanged: server API, Kafka, store (100/user), 16384-byte body cap.
+    acceptance:
+      - "web/split.js exports a pure splitText(text) with no DOM access; web/main.html uses it; textarea has no maxlength"
+      - "splitText: 256 code points -> 1 chunk with no marker; 257 -> 2 chunks starting with (1/2) and (2/2), each <= 256 code points incl. prefix"
+      - "splitText: emoji text is counted and cut by code point; no chunk contains a broken surrogate pair"
+      - "splitText: text with whitespace is cut at the last whitespace before the limit; text with no whitespace is hard-cut at 248 code points"
+      - "splitText: input that needs exactly 10 chunks returns 10 (prefix (10/10) fits); input that needs 11 is reported as too long"
+      - "Joining the chunk bodies (prefixes removed) reproduces the original text content"
+      - "Counter shows code points and chunk count; button reads Send / Send as X messages / disabled with a too long note for > 10 chunks"
+      - "Chunks are POSTed one at a time, each after the previous 202; they arrive in order in the received list"
+      - "On a failed chunk the page stops, the textarea holds the unsent text, and the status shows sent k/N - <error>"
+      - "node --test web/split.test.js runs in CI / verification and passes"
+      - "New ADR amending ADR-006 exists in docs/adrs/ and the ydk:component:ui/send-form manifest is updated; ydk spec verify passes"
+    test_strategy: "node --test unit tests for splitText (boundary 256/257, emoji, no-whitespace, 10 vs 11 chunks, content round-trip); manual/e2e check that a long text arrives as ordered chunks; go test ./... still green."
+    depends_on: [T-text-limit-256]

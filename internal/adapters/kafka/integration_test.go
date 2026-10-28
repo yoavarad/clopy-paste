@@ -428,8 +428,8 @@ func TestClusterIntegration(t *testing.T) {
 		}).Handler())
 		defer srv.Close()
 
-		// 1000 code points mixing 1-, 2-, 3- and 4-byte runes.
-		text := strings.Repeat("aé€😀", 250)
+		// 256 code points mixing 1-, 2-, 3- and 4-byte runes.
+		text := strings.Repeat("aé€😀", 64)
 		body, err := json.Marshal(map[string]string{"user": "perf", "text": text})
 		if err != nil {
 			t.Fatal(err)

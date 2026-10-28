@@ -109,13 +109,13 @@ case_censoring() {
 # ydk:test:system/round-trip.e2e case=limits
 # ydk:req:messaging/text-length and ydk:req:messaging/user-length
 # given: A Ready
-# when: POST 1001-code-point text; POST 129-code-point user
+# when: POST 257-code-point text; POST 129-code-point user
 # then: 400 with exact messages; nothing appears on B
 case_limits() {
   u="lim-$RUN"
-  long_text=$(awk 'BEGIN { for (i = 0; i < 1001; i++) printf "a" }')
+  long_text=$(awk 'BEGIN { for (i = 0; i < 257; i++) printf "a" }')
   long_user=$(awk 'BEGIN { for (i = 0; i < 129; i++) printf "u" }')
-  post_check "$HOST_CLOPY_PASTE_A" "{\"user\":\"$u\",\"text\":\"$long_text\"}" 400 'text must be 1..1000 characters'
+  post_check "$HOST_CLOPY_PASTE_A" "{\"user\":\"$u\",\"text\":\"$long_text\"}" 400 'text must be 1..256 characters'
   post_check "$HOST_CLOPY_PASTE_A" "{\"user\":\"$long_user\",\"text\":\"x\"}" 400 'user must be 1..128 characters'
   # Sentinel: valid message after the rejected ones proves the pipeline is live; rejected ones are never produced, so none may appear.
   send "$HOST_CLOPY_PASTE_A" "$u" "sentinel$RUN"

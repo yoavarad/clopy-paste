@@ -24,8 +24,8 @@ func TestValidate(t *testing.T) {
 		{"text 1", "text", "a", MaxTextLen, true},
 		{"text max", "text", strings.Repeat("a", MaxTextLen), MaxTextLen, true},
 		{"text max+1", "text", strings.Repeat("a", MaxTextLen+1), MaxTextLen, false},
-		{"text 1000 emoji", "text", strings.Repeat("😀", MaxTextLen), MaxTextLen, true},
-		{"text 1001 emoji", "text", strings.Repeat("😀", MaxTextLen+1), MaxTextLen, false},
+		{"text 256 emoji", "text", strings.Repeat("😀", MaxTextLen), MaxTextLen, true},
+		{"text 257 emoji", "text", strings.Repeat("😀", MaxTextLen+1), MaxTextLen, false},
 		{"text invalid utf8", "text", "a\xffb", MaxTextLen, false},
 	}
 	for _, c := range cases {
@@ -163,7 +163,7 @@ func TestWhitespaceCounts(t *testing.T) {
 		}
 	}
 	if ValidateText(strings.Repeat("\n", MaxTextLen+1)) == nil || ValidateText(strings.Repeat(" ", MaxTextLen+1)) == nil {
-		t.Error("1001 whitespace accepted")
+		t.Error("257 whitespace accepted")
 	}
 }
 
@@ -171,7 +171,7 @@ func TestErrorStrings(t *testing.T) {
 	if got := ValidateUser("").Error(); got != "user must be 1..128 characters" {
 		t.Error(got)
 	}
-	if got := ValidateText("").Error(); got != "text must be 1..1000 characters" {
+	if got := ValidateText("").Error(); got != "text must be 1..256 characters" {
 		t.Error(got)
 	}
 }

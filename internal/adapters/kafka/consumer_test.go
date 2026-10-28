@@ -285,3 +285,16 @@ func TestResubscribeReAddsInputTopic(t *testing.T) {
 		t.Errorf("consume topics after resubscribe = %v, want [in-topic]", got)
 	}
 }
+
+func TestHandleRecordTextAtLimitIsStored(t *testing.T) {
+	var buf bytes.Buffer
+	store := messaging.NewStoreWithLogger(slog.New(slog.NewTextHandler(io.Discard, nil)))
+	c := newTestConsumer(store, &buf)
+	text := strings.Repeat("😀", messaging.MaxTextLen)
+
+	c.handleRecord(context.Background(), testRecord(messaging.EncodeRecordValue("bob", text)))
+
+	if got := store.Get("bob"); len(got) != 1 || got[0].Text != text {
+		t.Fatalf("256-code-point record not stored: %v", got)
+	}
+}

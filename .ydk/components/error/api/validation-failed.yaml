@@ -10,7 +10,7 @@ response_shape:
     description: "One of the exact messages listed in triggers"
 triggers:
   - "send: user missing, empty or over 128 code points -> 'user must be 1..128 characters'"
-  - "send: text missing, empty or over 1000 code points -> 'text must be 1..1000 characters'"
+  - "send: text missing, empty or over 256 code points -> 'text must be 1..256 characters'"
   - "send: body over 16384 bytes -> 'request body too large'"
   - "get: user query parameter missing, empty or over 128 code points -> 'user must be 1..128 characters'"
 related:

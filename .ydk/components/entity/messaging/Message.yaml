@@ -9,8 +9,8 @@ fields:
     type: string
     required: true
     nullable: false
-    max_length: 1000
-    constraints: "1..1000 Unicode code points; already censored by the sending instance; never re-censored on receipt"
+    max_length: 256
+    constraints: "1..256 Unicode code points; already censored by the sending instance; never re-censored on receipt"
     description: "Message body as received in the record value field 'text'"
   time:
     type: datetime

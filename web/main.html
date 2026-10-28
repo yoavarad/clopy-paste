@@ -34,8 +34,8 @@
 <section id="send">
   <div class="head"><span>clopy-paste</span><span>[{{INSTANCE_NAME}}]</span></div>
   <label>User: <input type="text" id="user" maxlength="128" autocomplete="off"></label>
-  <textarea id="text" maxlength="1000" placeholder="free text..."></textarea>
-  <div class="row"><span id="counter">0/1000</span><button id="btn" type="button">Send</button></div>
+  <textarea id="text" maxlength="256" placeholder="free text..."></textarea>
+  <div class="row"><span id="counter">0/256</span><button id="btn" type="button">Send</button></div>
   <div id="status">status:</div>
 </section>
 <section id="received">
@@ -57,7 +57,7 @@
   try { userEl.value = localStorage.getItem(KEY) || ''; } catch (e) { /* storage unavailable */ }
 
   function setStatus(s) { statusEl.textContent = 'status: ' + s; }
-  function updateCounter() { counterEl.textContent = textEl.value.length + '/1000'; }
+  function updateCounter() { counterEl.textContent = textEl.value.length + '/256'; }
   textEl.addEventListener('input', updateCounter);
   updateCounter();
 

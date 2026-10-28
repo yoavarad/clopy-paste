@@ -42,7 +42,7 @@ cases:
   - name: latency-throughput
     description: "ydk:nfr:system/send-latency and ydk:nfr:system/throughput"
     given: "HTTP server wired to the real adapter"
-    when: "500 sends of 1000 code points, 10 concurrent workers"
+    when: "500 sends of 256 code points, 10 concurrent workers"
     then: "P95 <= 200 ms, P99 <= 500 ms, >= 50 sends/s, 0 errors"
 stubs: []
 never_mock:

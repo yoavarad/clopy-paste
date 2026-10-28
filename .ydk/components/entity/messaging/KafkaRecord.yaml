@@ -26,8 +26,8 @@ fields:
   value.text:
     type: string
     required: true
-    max_length: 1000
-    constraints: "1..1000 code points, censored by the producing instance"
+    max_length: 256
+    constraints: "1..256 code points, censored by the producing instance"
     description: "Message text"
   headers:
     type: list
