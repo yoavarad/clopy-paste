@@ -49,8 +49,8 @@ no build step, no external resources (ADR-015, [ydk:req:system/dependency-policy
 │ ┌──────────────────────────────────┐ │ ┌──────────────────────────────────┐ │
 │ │  free text...                    │ │ │ kubectl get pods -n foo          │ │
 │ └──────────────────────────────────┘ │ └──────────────────────────────────┘ │
-│ 0/1000                      [Send]   │ ...  (newest first, max 100)         │
-│ status: sent / error: text > 1000    │                                      │
+│ 0/256                      [Send]   │ ...  (newest first, max 100)         │
+│ status: sent / error: text > 256    │                                      │
 └──────────────────────────────────────┴──────────────────────────────────────┘
 ```
 
@@ -59,7 +59,7 @@ no build step, no external resources (ADR-015, [ydk:req:system/dependency-policy
 - Title and the instance label in brackets, taken from INSTANCE_NAME.
 - Username field limited to 128 characters; its value is remembered in the browser's local
   storage and restored on load.
-- Text area of about half the screen height, limited to 1000 characters, with a live counter.
+- Text area of about half the screen height, limited to 256 characters, with a live counter.
 - Send button, disabled while a send is in flight.
 - Status line: "sent" after success (text area cleared, counter reset); "Kafka: disconnected"
   when the send is rejected because Kafka is unavailable; "error: …" with the server's message

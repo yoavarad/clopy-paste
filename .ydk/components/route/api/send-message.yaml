@@ -3,7 +3,7 @@ id: ydk:route:api/send-message
 description: |
   Accepts a message typed on this instance and publishes it to the output topic.
   Steps, in order: limit body to 16384 bytes; decode JSON (unknown fields ignored); validate
-  user 1..128 and text 1..1000 Unicode code points (ydk:req:messaging/user-length,
+  user 1..128 and text 1..256 Unicode code points (ydk:req:messaging/user-length,
   ydk:req:messaging/text-length); censor both fields (ydk:req:messaging/censor-denylist);
   call ydk:contract:messaging/Publisher Publish with a 5 s deadline; respond after the broker
   ack. Nothing is stored locally (ydk:req:messaging/sent-not-stored). Logs user, text length
@@ -19,7 +19,7 @@ request:
     text:
       type: string
       required: true
-      description: "Message text, 1..1000 code points before censoring"
+      description: "Message text, 1..256 code points before censoring"
 responses:
   "202":
     description: "Record acknowledged by Kafka (acks=all)"

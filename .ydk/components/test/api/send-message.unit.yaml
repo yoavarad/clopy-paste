@@ -17,7 +17,7 @@ cases:
   - name: limits
     description: "ydk:req:messaging/user-length and ydk:req:messaging/text-length boundaries"
     given: "Fake Publisher"
-    when: "user of 0/1/128/129 code points; text of 0/1/1000/1001 code points (incl. 4-byte emoji)"
+    when: "user of 0/1/128/129 code points; text of 0/1/256/257 code points (incl. 4-byte emoji)"
     then: "0 and over-limit -> 400 with exact messages; boundaries -> 202"
   - name: body-too-large
     description: "16384-byte cap"

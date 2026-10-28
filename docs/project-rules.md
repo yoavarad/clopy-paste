@@ -9,7 +9,7 @@ Kafka is the only link between the sides.
 - UI: username field, free-text area (~half screen), Send button; other half shows latest
   messages received from the other side for the username currently typed in the box.
 - Limits: max 100 users (least-recently-used user evicted when the 101st arrives); max 100
-  messages per user (FIFO); text max 1000 chars; username max 128 chars.
+  messages per user (FIFO); text max 256 chars; username max 128 chars.
 - Special characters in text are replaced with `_` before publishing to Kafka.
 - Kafka payload: flat JSON with username field and text field.
 - Runtime: OpenShift/Kubernetes, released via Helm charts. CI/CD on GitHub here; GitLab in prod.

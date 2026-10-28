@@ -31,7 +31,7 @@ triggers:
   - "user missing or not a string -> missing_user"
   - "text missing or not a string -> missing_text"
   - "user empty or over 128 code points -> user_length"
-  - "text empty or over 1000 code points -> text_length"
+  - "text empty or over 256 code points -> text_length"
 related:
   - ydk:req:messaging/drop-invalid-incoming
   - ydk:entity:messaging/KafkaRecord

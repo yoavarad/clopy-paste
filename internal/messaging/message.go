@@ -10,7 +10,7 @@ import (
 // Limits in code points (ADR-006).
 const (
 	MaxUserLen = 128
-	MaxTextLen = 1000
+	MaxTextLen = 256
 )
 
 // ValidationError reports a field outside 1..Max code points (or invalid UTF-8).

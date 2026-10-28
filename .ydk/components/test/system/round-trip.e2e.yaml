@@ -22,7 +22,7 @@ cases:
   - name: limits
     description: "ydk:req:messaging/text-length and ydk:req:messaging/user-length"
     given: "A Ready"
-    when: "POST 1001-code-point text; POST 129-code-point user"
+    when: "POST 257-code-point text; POST 129-code-point user"
     then: "400 with exact messages; nothing appears on B"
   - name: plain-text
     description: "ydk:req:ui/plain-text-rendering at API level"

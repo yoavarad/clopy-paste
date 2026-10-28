@@ -73,9 +73,9 @@ func TestSendMessage(t *testing.T) {
 			{"a", "x", 202, ""},
 			{strings.Repeat(emoji, 128), "x", 202, ""},
 			{strings.Repeat(emoji, 129), "x", 400, "user must be 1..128 characters"},
-			{"a", "", 400, "text must be 1..1000 characters"},
-			{"a", strings.Repeat(emoji, 1000), 202, ""},
-			{"a", strings.Repeat(emoji, 1001), 400, "text must be 1..1000 characters"},
+			{"a", "", 400, "text must be 1..256 characters"},
+			{"a", strings.Repeat(emoji, 256), 202, ""},
+			{"a", strings.Repeat(emoji, 257), 400, "text must be 1..256 characters"},
 		}
 		for _, c := range cases {
 			h, f := sendServer(nil, nil)
@@ -96,7 +96,7 @@ func TestSendMessage(t *testing.T) {
 	t.Run("invalid-utf8", func(t *testing.T) {
 		h, f := sendServer(nil, nil)
 		wantJSON(t, post(h, "{\"user\":\"a\xff\",\"text\":\"x\"}"), 400, "error", "user must be 1..128 characters")
-		wantJSON(t, post(h, "{\"user\":\"a\",\"text\":\"x\xc3\"}"), 400, "error", "text must be 1..1000 characters")
+		wantJSON(t, post(h, "{\"user\":\"a\",\"text\":\"x\xc3\"}"), 400, "error", "text must be 1..256 characters")
 		if f.calls != 0 {
 			t.Fatal("published invalid UTF-8")
 		}

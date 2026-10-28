@@ -68,7 +68,7 @@ stories:
       - ydk:req:messaging/censor-denylist
       - ydk:test:messaging/censor.unit
     acceptance:
-      - "Username 1..128 and text 1..1000 Unicode code points pass; 0 or over the limit fail with the field name and max; nothing is truncated"
+      - "Username 1..128 and text 1..256 Unicode code points pass; 0 or over the limit fail with the field name and max; nothing is truncated"
       - "Every denylisted code point is replaced by '_' one for one; other code points, including multi-byte ones, are unchanged"
       - "Record value encodes and decodes as exactly {\"user\",\"text\"}; unknown fields are ignored on decode"
   - id: S-store
@@ -285,7 +285,7 @@ tasks:
       Decisions: ADR-006-limit-violations.md, ADR-007-kafka-record-contract.md (docs/adrs/).
       Nothing in the skeleton validates limits or encodes the record. Add to
       internal/messaging (new file message.go + message_test.go):
-      - Constants MaxUserLen=128, MaxTextLen=1000 (code points).
+      - Constants MaxUserLen=128, MaxTextLen=256 (code points).
       - ValidateUser(s) / ValidateText(s) (or one Validate(user, text)) counting
         utf8.RuneCountInString; 0 or over the max -> a typed error carrying field and max so
         httpapi can render msgValidationFailed ("${field} must be 1..${max} characters").
@@ -298,7 +298,7 @@ tasks:
       No ydk:test manifest targets this directly; write table tests (boundaries 0/1/max/max+1,
       emoji counted as one code point).
     acceptance:
-      - "Boundary tests at 0, 1, max and max+1 for both fields pass, including a 1000-emoji text"
+      - "Boundary tests at 0, 1, max and max+1 for both fields pass, including a 256-emoji text"
       - "Encode/decode round-trips; decode rejects non-object, missing or non-string fields and over-limit values"
       - "Unknown JSON fields are ignored on decode"
     test_strategy: "Unit table tests in internal/messaging/message_test.go; counts toward the 80% gate."
@@ -474,7 +474,7 @@ tasks:
         insert it server-side in handleIndex (html-escaped placeholder replacement, once at
         startup or per request).
       - Send form: username (maxlength 128, localStorage remember/restore), textarea about
-        half the screen (maxlength 1000) with live counter, Send disabled while in flight;
+        half the screen (maxlength 256) with live counter, Send disabled while in flight;
         status 'sent' (clear text, reset counter), 503 -> 'Kafka: disconnected', other ->
         'error: <server message>'; text kept on every failure.
       - Received list: heading 'Received from other side'; poll GET /api/messages every 2 s
@@ -577,7 +577,7 @@ tasks:
       (bootstrap, SASL user/password, CA file) and the test skips with a reason when unset.
       Cases: publish-record-shape, consume-to-store, drop-invalid, new-group-latest,
       offset-resume, plaintext-mode, bad-credentials, latency-throughput (500 sends, 10
-      goroutines, 1000-code-point text: P95 <= 200 ms, P99 <= 500 ms, >= 50 sends/s, zero
+      goroutines, 256-code-point text: P95 <= 200 ms, P99 <= 500 ms, >= 50 sends/s, zero
       errors). Decide how make test-integration reaches the broker (in-cluster Job or
       port-forward of the plaintext and TLS listeners) and wire make test-integration into
       the e2e stage in scripts/e2e.sh after env-up.
