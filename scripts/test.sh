@@ -1,11 +1,11 @@
 #!/bin/sh
-# make test: go test -race -cover, then fail when a gated package is below COVER_MIN percent.
+# make test: node --test web/split.test.js (ADR-019), go test -race -cover, then fail when a gated package is below COVER_MIN percent.
 # ydk:crosscut:ops/ci-pipeline stage 2.
 set -eu
 cd "$(dirname "$0")/.."
 . scripts/env.sh
 
-require go awk
+require go awk node
 : "${COVER_MIN:=80}"
 : "${COVER_PKGS:=internal/messaging internal/httpapi internal/config}"
 set --
@@ -16,6 +16,7 @@ else
   echo "test: WARNING -race skipped (needs CGO_ENABLED=1 and a C compiler such as gcc on PATH)" >&2
 fi
 sh test/scripts/build-size-gate.sh
+node --test web/split.test.js
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 # Stream output while it runs; capture go test's exit code (a pipe would hide it).

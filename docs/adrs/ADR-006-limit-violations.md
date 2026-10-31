@@ -1,7 +1,7 @@
 # ADR-006: Reject over-limit input; drop and log invalid incoming records
 
 ## Status
-Accepted
+Accepted. Outgoing part amended by ADR-019 (client auto-split, no `maxlength`).
 
 ## Context
 Limits: username 1..128 chars, text 1..256 chars. Counted in Unicode code points, not bytes.

@@ -2,15 +2,21 @@ $schema: ydk:schema:component
 id: ydk:component:ui/send-form
 description: |
   Left column of ydk:page:ui/main: username input (maxlength 128, value persisted in
-  localStorage key 'clopy-paste.user', restored on load), textarea (maxlength 256, about half
-  the viewport height), counter 'n/256' updated on input (counts text.length as the browser
-  does; server is authority), Send button, status line.
-  Send: disabled while a request is in flight; POSTs {user, text} as JSON. On 202: clear
-  textarea, counter 0/256, status 'sent'. On error: keep textarea; status 'Kafka: disconnected'
-  on 503 (only Kafka-state signal, ADR-016), 'error: <error field of JSON body>' on other
-  errors, 'error: HTTP <status>' for a non-JSON body, or 'error: network error'
-  (ydk:req:ui/keep-text-on-error). Send is a no-op with status
-  'error: user and text required' when either field is empty.
+  localStorage key 'clopy-paste.user', restored on load), textarea (no maxlength, about half
+  the viewport height), counter 'n/256' in Unicode code points, plus ' - X messages' when the
+  text will be split (ADR-019), Send button, status line.
+  Auto-split (web/split.js splitText, pure, inlined into the page): <= 256 code points is one
+  message with no marker; longer text becomes chunks prefixed '(i/N) ', each body <= 248 code
+  points, cut after the last whitespace (hard cut if none), never inside a code point; max 10.
+  Button: 'Send' (one message), 'Send as X messages' (2..10), disabled with counter note
+  'too long (max 10 messages)' when more than 10 chunks would be needed.
+  Send: disabled while requests are in flight; POSTs {user, text} as JSON, one chunk at a time,
+  each only after the previous 202. On all 202: clear textarea, status 'sent' (or 'sent N/N').
+  On error: stop; keep the textarea (single message) or put the unsent chunk bodies back
+  (split); status 'Kafka: disconnected' on 503 (only Kafka-state signal, ADR-016),
+  'error: <error field of JSON body>' on other errors, 'error: HTTP <status>' for a non-JSON
+  body, or 'error: <network error>', prefixed 'sent k/N - ' when split
+  (ydk:req:ui/keep-text-on-error). Server still rejects > 256 code points (ADR-006).
 type: form
 framework: agnostic
 props:

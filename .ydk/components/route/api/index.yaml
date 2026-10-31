@@ -3,7 +3,7 @@ id: ydk:route:api/index
 description: |
   Serves the single page ydk:page:ui/main; the page is one embedded index.html (go:embed, no
   build step) rendered with html/template so the server inserts INSTANCE_NAME (HTML-escaped)
-  into the title-bar instance label. Exact path match only; any other unknown path returns 404.
+  into the title-bar instance label and inlines the embedded web/split.js (ADR-019). Exact path match only; any other unknown path returns 404.
 method: GET
 path: /
 request: {}
