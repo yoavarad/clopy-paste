@@ -7,3 +7,8 @@ import "embed"
 //
 //go:embed *.html
 var Pages embed.FS
+
+// SplitJS is web/split.js (ADR-019), inlined into main.html by the index handler.
+//
+//go:embed split.js
+var SplitJS string

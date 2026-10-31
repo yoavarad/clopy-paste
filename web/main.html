@@ -34,7 +34,7 @@
 <section id="send">
   <div class="head"><span>clopy-paste</span><span>[{{INSTANCE_NAME}}]</span></div>
   <label>User: <input type="text" id="user" maxlength="128" autocomplete="off"></label>
-  <textarea id="text" maxlength="256" placeholder="free text..."></textarea>
+  <textarea id="text" placeholder="free text..."></textarea>
   <div class="row"><span id="counter">0/256</span><button id="btn" type="button">Send</button></div>
   <div id="status">status:</div>
 </section>
@@ -43,6 +43,7 @@
   <div id="list"></div>
 </section>
 </main>
+<script>{{SPLIT_JS}}</script>
 <script>
 (function () {
   'use strict';
@@ -57,32 +58,77 @@
   try { userEl.value = localStorage.getItem(KEY) || ''; } catch (e) { /* storage unavailable */ }
 
   function setStatus(s) { statusEl.textContent = 'status: ' + s; }
-  function updateCounter() { counterEl.textContent = textEl.value.length + '/256'; }
+  var split = window.clopySplit;
+  var sending = false;
+  // chunksOf returns splitText(text), or null when it needs more than MAX_CHUNKS messages.
+  function chunksOf(text) {
+    try { return split.splitText(text); } catch (e) { return null; }
+  }
+  function updateCounter() {
+    var n = Array.from(textEl.value).length;
+    var chunks = chunksOf(textEl.value);
+    if (chunks === null) {
+      counterEl.textContent = n + '/' + split.LIMIT + ' - too long (max ' + split.MAX_CHUNKS + ' messages)';
+      btn.textContent = 'Send';
+      btn.disabled = true;
+      return;
+    }
+    counterEl.textContent = n + '/' + split.LIMIT + (chunks.length > 1 ? ' - ' + chunks.length + ' messages' : '');
+    btn.textContent = chunks.length > 1 ? 'Send as ' + chunks.length + ' messages' : 'Send';
+    btn.disabled = sending;
+  }
   textEl.addEventListener('input', updateCounter);
   updateCounter();
 
-  btn.addEventListener('click', function () {
-    var sent = textEl.value;
-    btn.disabled = true;
-    setStatus('sending...');
-    fetch('/api/messages', {
+  // post sends one message; resolves to null on 202, else to the error status text.
+  function post(user, text) {
+    return fetch('/api/messages', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user: userEl.value, text: sent })
+      body: JSON.stringify({ user: user, text: text })
     }).then(function (res) {
-      if (res.ok) {
-        if (textEl.value === sent) { textEl.value = ''; }
-        updateCounter();
-        setStatus('sent');
-        return;
-      }
-      if (res.status === 503) { setStatus('Kafka: disconnected'); return; }
+      if (res.ok) { return null; }
+      if (res.status === 503) { return 'Kafka: disconnected'; }
       return res.json().then(function (b) {
-        setStatus('error: ' + (b && b.error ? b.error : 'HTTP ' + res.status));
-      }, function () { setStatus('error: HTTP ' + res.status); });
-    }).catch(function (e) {
-      setStatus('error: ' + e.message);
-    }).then(function () { btn.disabled = false; });
+        return 'error: ' + (b && b.error ? b.error : 'HTTP ' + res.status);
+      }, function () { return 'error: HTTP ' + res.status; });
+    }, function (e) { return 'error: ' + e.message; });
+  }
+
+  btn.addEventListener('click', function () {
+    var sent = textEl.value;
+    var chunks = chunksOf(sent);
+    if (chunks === null) { return; }
+    var user = userEl.value;
+    var n = chunks.length;
+    var bodies = n > 1 ? chunks.map(function (c) { return c.slice(c.indexOf(') ') + 2); }) : chunks;
+    sending = true;
+    btn.disabled = true;
+    // Lock the inputs so the unsent text can always be restored and every chunk has one user.
+    textEl.readOnly = true;
+    userEl.readOnly = true;
+    setStatus('sending...');
+    // Sequential: each chunk is POSTed only after the previous one got 202 (same key -> ordered).
+    function next(k) {
+      if (k === n) {
+        if (textEl.value === sent) { textEl.value = ''; }
+        setStatus(n > 1 ? 'sent ' + n + '/' + n : 'sent');
+        return Promise.resolve();
+      }
+      if (n > 1) { setStatus('sending ' + (k + 1) + '/' + n + '...'); }
+      return post(user, chunks[k]).then(function (err) {
+        if (err === null) { return next(k + 1); }
+        // Keep the unsent text (ydk:req:ui/keep-text-on-error).
+        if (textEl.value === sent) { textEl.value = bodies.slice(k).join(''); }
+        setStatus(n > 1 ? 'sent ' + k + '/' + n + ' - ' + err : err);
+      });
+    }
+    next(0).catch(function (e) { setStatus('error: ' + e.message); }).then(function () {
+      sending = false;
+      textEl.readOnly = false;
+      userEl.readOnly = false;
+      updateCounter();
+    });
   });
 
   function pad(n) { return (n < 10 ? '0' : '') + n; }
