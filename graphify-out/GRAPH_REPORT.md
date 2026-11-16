@@ -1,17 +1,17 @@
-# Graph Report - 117  (2026-11-16)
+# Graph Report - clopy-paste  (2026-11-16)
 
 ## Corpus Check
-- 332 files · ~89,577 words
+- 333 files · ~89,994 words
 - Verdict: corpus is large enough that graph structure adds value.
-- Unclassified: 10 file(s) not represented in the graph (top: (none) 8, .deps 1, .tpl 1)
+- Unclassified: 9 file(s) not represented in the graph (top: (none) 7, .deps 1, .tpl 1)
 
 ## Summary
-- 4935 nodes · 6086 edges · 399 communities (374 shown, 25 thin omitted)
+- 4968 nodes · 6118 edges · 399 communities (376 shown, 23 thin omitted)
 - Extraction: 98% EXTRACTED · 2% INFERRED · 0% AMBIGUOUS · INFERRED: 98 edges (avg confidence: 0.87)
 - Token cost: 0 input · 0 output
 
 ## Graph Freshness
-- Built from commit: `860c5ac7`
+- Built from commit: `fe651538`
 - Run `git rev-parse HEAD` and compare to check if the graph is stale.
 - Run `graphify update .` after code changes (no API cost).
 
@@ -22,8 +22,8 @@
 - Job ingress-nginx-admission-create
 - integration_test.go
 - statusCapture
-- DecodeError
-- ValidationError
+- message.go
+- steps
 - NewServer
 - .run
 - fields
@@ -423,6 +423,8 @@
 10. `fail()` - 18 edges
 
 ## Surprising Connections (you probably didn't know these)
+- `Publish gate` --references--> `minimal()`  [INFERRED]
+  .ydk/ignition-packs/go-http-service/README.md → internal/config/config_test.go
 - `Follow-ups` --references--> `EncodeRecordValue()`  [INFERRED]
   .ydk/retros/3.md → internal/messaging/message.go
 - `Alternatives` --references--> `message()`  [INFERRED]
@@ -431,41 +433,47 @@
   .ydk/ignition-packs/go-http-service/README.md → internal/adapters/kafka/consumer.go
 - `Unreleased` --references--> `Connect()`  [INFERRED]
   .ydk/ignition-packs/go-http-service/CHANGELOG.md → internal/adapters/kafka/kafka.go
-- `Generated layout` --references--> `Connect()`  [INFERRED]
-  .ydk/ignition-packs/go-http-service/README.md → internal/adapters/kafka/kafka.go
 
 ## Import Cycles
 - None detected.
 
-## Communities (399 total, 25 thin omitted)
+## Communities (399 total, 23 thin omitted)
 
 ### Community 0 - "net/http.ResponseWriter"
-Cohesion: 0.11
-Nodes (20): sendRequest, statusRecorder, renderMessage(), writeError(), writeJSON(), decodeField(), writeValidation(), DecodeRecordValue() (+12 more)
+Cohesion: 0.30
+Nodes (5): statusRecorder, renderMessage(), writeError(), writeJSON(), writeValidation()
 
 ### Community 1 - "NewStore"
-Cohesion: 0.15
-Nodes (23): assertRecordFields(), logLines(), newTestConsumer(), TestHandleRecordInvalidIsDroppedAndWarned(), TestHandleRecordNilValueDoesNotPanic(), TestHandleRecordTextAtLimitIsStored(), TestHandleRecordValidStoresWithRecordTimestamp(), TestProcessDoesNotResubscribeOnOtherErrors() (+15 more)
+Cohesion: 0.23
+Nodes (15): assertRecordFields(), logLines(), newTestConsumer(), TestHandleRecordInvalidIsDroppedAndWarned(), TestHandleRecordNilValueDoesNotPanic(), TestHandleRecordTextAtLimitIsStored(), TestHandleRecordValidStoresWithRecordTimestamp(), TestProcessDoesNotResubscribeOnOtherErrors() (+7 more)
 
 ### Community 2 - "TestClusterIntegration"
-Cohesion: 0.09
-Nodes (24): connectKafka(), NewConsumer(), loadEnv(), produce(), TestClusterIntegration(), texts(), uniq(), valid() (+16 more)
+Cohesion: 0.10
+Nodes (20): connectKafka(), NewConsumer(), loadEnv(), produce(), TestClusterIntegration(), texts(), uniq(), valid() (+12 more)
 
 ### Community 3 - "Job ingress-nginx-admission-create"
 Cohesion: 0.22
 Nodes (9): Job ingress-nginx-admission-create, Job ingress-nginx-admission-patch, apiVersion, kind, spec, apiVersion, kind, spec (+1 more)
 
 ### Community 4 - "integration_test.go"
-Cohesion: 0.17
-Nodes (4): messageJSON, MessageStore, recordValue, UserMessages
+Cohesion: 0.10
+Nodes (17): consumer, kafkaSide, messageJSON, sendRequest, newGetServer(), TestGetMessages(), routeOf(), decodeField() (+9 more)
+
+### Community 6 - "message.go"
+Cohesion: 0.14
+Nodes (21): newRecord(), TestNewRecord(), DecodeRecordValue(), EncodeRecordValue(), hasLoneSurrogate(), hexVal(), reasonOf(), TestDecodeReasons() (+13 more)
+
+### Community 7 - "steps"
+Cohesion: 0.07
+Nodes (29): concurrency, cancel-in-progress, group, env, DEFAULT_BRANCH, GH_TOKEN, GRAPHIFY_BRANCH, if (+21 more)
 
 ### Community 20 - "NewServer"
-Cohesion: 0.10
-Nodes (27): Deps, sent, newGetServer(), TestGetMessages(), do(), newTestServer(), TestErrorFormat(), TestReadyz() (+19 more)
+Cohesion: 0.09
+Nodes (26): Deps, sent, do(), newTestServer(), TestErrorFormat(), TestReadyz(), wantJSON(), getIndex() (+18 more)
 
 ### Community 25 - ".run"
-Cohesion: 0.07
-Nodes (26): app, connectFunc, consumer, events, fakeClient, fakeConsumer, harness, kafkaClient (+18 more)
+Cohesion: 0.09
+Nodes (21): app, connectFunc, events, fakeClient, fakeConsumer, harness, kafkaClient, syncBuffer (+13 more)
 
 ### Community 28 - "fields"
 Cohesion: 0.04
@@ -597,7 +605,7 @@ Nodes (27): description, required, type, description, description, required, typ
 
 ### Community 161 - "steps"
 Cohesion: 0.08
-Nodes (26): name, runs-on, steps, name, runs-on, steps, concurrency, cancel-in-progress (+18 more)
+Nodes (28): if, name, runs-on, steps, if, name, runs-on, steps (+20 more)
 
 ### Community 163 - ".ydk/components/entity/messaging/Message.yaml"
 Cohesion: 0.07
@@ -616,8 +624,8 @@ Cohesion: 0.08
 Nodes (24): build, script, stage, default, image, e2e, rules, script (+16 more)
 
 ### Community 171 - "config_test.go"
-Cohesion: 0.18
-Nodes (22): Config, invalid(), Load(), lookup(), parseServers(), minimal(), setEnv(), TestBootstrapServers() (+14 more)
+Cohesion: 0.25
+Nodes (16): invalid(), Load(), lookup(), parseServers(), minimal(), setEnv(), TestBootstrapServers(), TestCensorChars() (+8 more)
 
 ### Community 174 - "smoke.py"
 Cohesion: 0.13
@@ -633,7 +641,7 @@ Nodes (23): epics, description, id, spec_refs, title, stories, acceptance, compo
 
 ### Community 180 - "ydk-pr-body.yml"
 Cohesion: 0.08
-Nodes (23): concurrency, cancel-in-progress, group, env, BASE_REF, PR_BODY, YDK_VERSION, jobs (+15 more)
+Nodes (24): concurrency, cancel-in-progress, group, env, BASE_REF, PR_BODY, YDK_VERSION, jobs (+16 more)
 
 ### Community 181 - "n07.yaml"
 Cohesion: 0.08
@@ -1052,8 +1060,8 @@ Cohesion: 0.20
 Nodes (9): concurrency, cancel-in-progress, group, jobs, name, permissions, actions, contents (+1 more)
 
 ### Community 387 - "testing.T"
-Cohesion: 0.10
-Nodes (25): runConsumer(), TestConnectDoesNotSubscribeBeforeRun(), TestResubscribeReAddsInputTopic(), TestRunReturnsNilWhenClientClosed(), TestRunSubscribesAndReturnsNilOnContextCancel(), baseConfig(), newTestClient(), saslConfig() (+17 more)
+Cohesion: 0.09
+Nodes (32): runConsumer(), TestConnectDoesNotSubscribeBeforeRun(), TestResubscribeReAddsInputTopic(), TestRunReturnsNilWhenClientClosed(), TestRunSubscribesAndReturnsNilOnContextCancel(), Connect(), baseConfig(), newTestClient() (+24 more)
 
 ### Community 395 - ".ydk/components/nfr/system/availability.yaml"
 Cohesion: 0.20
@@ -1937,23 +1945,23 @@ Nodes (3): values, description, type
 
 ## Knowledge Gaps
 - **2 isolated node(s):** `clopy-paste`, `ADR-0019`
-  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3342 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
-- **25 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
+  These have ≤1 connection - possible missing edges or undocumented components. (Counts symbols only; 3364 node(s) total have ≤1 connection when file, concept and rationale nodes are included.)
+- **23 thin communities (<3 nodes) omitted from report** — run `graphify query` to explore isolated nodes.
 
 ## Suggested Questions
 _Questions this graph is uniquely positioned to answer:_
 
-- **Why does `Generated layout` connect `config_test.go` to `net/http.ResponseWriter`, `TestClusterIntegration`, `ops.py`?**
+- **Why does `Generated layout` connect `testing.T` to `net/http.ResponseWriter`, `TestClusterIntegration`, `config_test.go`, `ops.py`?**
   _High betweenness centrality (0.002) - this node is a cross-community bridge._
 - **What connects `clopy-paste`, `ADR-0019` to the rest of the system?**
   _2 weakly-connected nodes found - possible documentation gaps or missing edges._
-- **Should `net/http.ResponseWriter` be split into smaller, more focused modules?**
-  _Cohesion score 0.11290322580645161 - nodes in this community are weakly interconnected._
-- **Why does `app_name()` connect `ops.py` to `config_test.go`, `config_loader.py`, `re`, `_go_common.py`?**
-  _High betweenness centrality (0.002) - this node is a cross-community bridge._
-- **Should `NewStore` be split into smaller, more focused modules?**
-  _Cohesion score 0.14666666666666667 - nodes in this community are weakly interconnected._
 - **Should `TestClusterIntegration` be split into smaller, more focused modules?**
-  _Cohesion score 0.09090909090909091 - nodes in this community are weakly interconnected._
-- **Should `NewServer` be split into smaller, more focused modules?**
-  _Cohesion score 0.1021021021021021 - nodes in this community are weakly interconnected._
+  _Cohesion score 0.10336817653890824 - nodes in this community are weakly interconnected._
+- **Why does `app_name()` connect `ops.py` to `testing.T`, `config_loader.py`, `re`, `_go_common.py`?**
+  _High betweenness centrality (0.002) - this node is a cross-community bridge._
+- **Should `integration_test.go` be split into smaller, more focused modules?**
+  _Cohesion score 0.09649122807017543 - nodes in this community are weakly interconnected._
+- **Should `message.go` be split into smaller, more focused modules?**
+  _Cohesion score 0.14153846153846153 - nodes in this community are weakly interconnected._
+- **Should `steps` be split into smaller, more focused modules?**
+  _Cohesion score 0.06666666666666667 - nodes in this community are weakly interconnected._
