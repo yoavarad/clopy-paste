@@ -1,2 +1,5 @@
 __pycache__/
 .ydk/cache/
+graphify-out/cache/
+graphify-out/.graphify_python
+graphify-out/.graphify_root
